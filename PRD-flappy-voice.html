@@ -226,6 +226,7 @@ PlayerRun {
   score: int                // pipes passed
   durationSec: float
   timestamp: datetime
+  octaveFloorHz: float      // anchor set from first sung note, section 9
 }
 
 // v2 — global leaderboard
@@ -240,8 +241,12 @@ GameConfig {
   pipeSpeed: float
   spawnIntervalSec: float
   difficultyRampCurve: AnimationCurve
-  octaveRangeMinHz: float
-  octaveRangeMaxHz: float
+  octaveWidthSemitones: int       // 12 = one octave
+  anchorCaptureWindowMs: int      // stable-pitch window used to set the floor
+  vocalRangeClampMinHz: float     // sanity bounds so a cough/thump can&#x27;t
+  vocalRangeClampMaxHz: float     // become the anchor
+  recenterWindowSec: float        // rolling window for adaptive re-centering
+  recenterDriftRatePerSec: float  // how fast the floor is allowed to drift
 }
 
 // runtime-only, never persisted:
@@ -258,11 +263,15 @@ PitchSample {
 **v1 (must-have):**
 1. Mic capture + real-time pitch detection (autocorrelation/YIN) with a
    noise gate and amplitude threshold to reject silence/noise.
-2. Pitch → height mapping with octave-wrap: `height = (semitoneOffset mod 12) / 12`.
+2. Pitch → height mapping with octave-wrap, anchored to the player&#x27;s own
+   voice rather than a fixed absolute Hz band: `height = (semitoneOffset
+   mod 12) / 12`, where semitone 0 is the player&#x27;s own octave floor (see
+   item 3 and section 9) — no calibration screen.
 3. Attract mode: on load, the character auto-lerps between the Y-positions
    of upcoming pipe gaps (no mic needed); the moment sustained voiced pitch
-   is detected, control hands off to the player at that same height (no
-   snap/teleport).
+   is detected, that pitch sets the octave floor for the run and control
+   hands off to the player at that same height (no snap/teleport, no
+   separate calibration step).
 4. Procedural pipe spawner with difficulty ramp (speed and/or gap size
    change with score or elapsed time).
 5. Collision detection → death → end screen.
@@ -271,6 +280,10 @@ PitchSample {
 8. Share: generate a shareable score card image and invoke the native
    share sheet.
 9. Mic permission flow.
+10. Adaptive octave re-centering: a rolling window of sung pitch during a
+    run slowly drifts the octave floor if the player is consistently
+    pushing against the top or bottom edge, so the mapping tracks natural
+    drift/fatigue without ever pausing the run.
 
 **v1.1 (nice-to-have):**
 - Replace scripted attract-mode lerp with a ghost replay of the player&#x27;s
@@ -336,9 +349,18 @@ mic-permission and native-share API surface against the notes in section
 - **Risk (v2):** Leaderboard cheating via a prerecorded held tone, once a
   global leaderboard ships. **Mitigation:** server-side score-vs-duration
   sanity caps and submission rate limiting via UGS.
-- **Decision:** no calibration step — assume every player can comfortably
-  sing across at least one octave, and tune the fixed octave range in
-  `GameConfig` to that assumption instead of measuring it per player.
+- **Risk:** a fixed absolute-Hz octave band excludes voices that sit
+  outside it (bass vs. soprano), but a dedicated calibration screen adds
+  friction before the first run.
+  **Decision:** no calibration screen. Anchor the octave floor implicitly
+  to the first ~`anchorCaptureWindowMs` of stable pitch captured during the
+  attract-to-play handoff (already a required action — see feature 3),
+  clamped to `vocalRangeClampMinHz`/`Max` so a stray cough or thump can&#x27;t
+  become the anchor. Pair this with adaptive re-centering during the run
+  (feature 10) — a rolling pitch window that drifts the floor if the
+  player consistently presses against the top or bottom edge, covering
+  fatigue/drift without stopping play. Together these replace explicit
+  calibration while still fitting the octave to the individual player.
 
 ## 10. Art style brainstorm
 Four directions considered:
@@ -374,9 +396,20 @@ style A&#x27;s neon palette as a &quot;night mode&quot; cosmetic skin for v1.1.
   every frame; prefer it over a pure-FFT approach, which is less accurate
   for a voice&#x27;s fundamental frequency.
 - **Hz → height mapping:** convert Hz to a MIDI note number via
-  `69 + 12 * log2(f / 440)`, take `semitone mod 12` against the fixed
-  range in `GameConfig`, normalize to 0–1, and use that as the target Y.
+  `69 + 12 * log2(f / 440)`, subtract the run&#x27;s `octaveFloor` note, take
+  the result `mod 12`, normalize to 0–1, and use that as the target Y.
   The modulo operation *is* the octave-wrap.
+- **Octave floor anchor:** during the attract-to-play handoff, once pitch
+  has been stable (low variance) for `anchorCaptureWindowMs`, set
+  `octaveFloor` to that note, clamped into
+  `[vocalRangeClampMinHz, vocalRangeClampMaxHz]`. This is the entire
+  &quot;calibration&quot; — it rides on the handoff that already has to happen for
+  the game to start, so there&#x27;s no separate screen or wait.
+- **Adaptive re-centering:** maintain a rolling buffer of sung notes over
+  `recenterWindowSec`; if the buffer&#x27;s mean sits persistently near 0 or 12
+  (i.e., the player is hugging an edge), nudge `octaveFloor` by up to
+  `recenterDriftRatePerSec` per second toward the buffer&#x27;s center. Runs
+  as a slow background correction — never a visible jump.
 - **Smoothing:** exponential moving average or `Mathf.SmoothDamp` on the
   target height to absorb vibrato jitter; clamp max speed so a voice crack
   can&#x27;t teleport the character across the screen instantly.
@@ -480,6 +513,7 @@ PlayerRun {
   score: int                // pipes passed
   durationSec: float
   timestamp: datetime
+  octaveFloorHz: float      // anchor set from first sung note, section 9
 }
 
 // v2 — global leaderboard
@@ -494,8 +528,12 @@ GameConfig {
   pipeSpeed: float
   spawnIntervalSec: float
   difficultyRampCurve: AnimationCurve
-  octaveRangeMinHz: float
-  octaveRangeMaxHz: float
+  octaveWidthSemitones: int       // 12 = one octave
+  anchorCaptureWindowMs: int      // stable-pitch window used to set the floor
+  vocalRangeClampMinHz: float     // sanity bounds so a cough/thump can't
+  vocalRangeClampMaxHz: float     // become the anchor
+  recenterWindowSec: float        // rolling window for adaptive re-centering
+  recenterDriftRatePerSec: float  // how fast the floor is allowed to drift
 }
 
 // runtime-only, never persisted:
@@ -512,11 +550,15 @@ PitchSample {
 **v1 (must-have):**
 1. Mic capture + real-time pitch detection (autocorrelation/YIN) with a
    noise gate and amplitude threshold to reject silence/noise.
-2. Pitch → height mapping with octave-wrap: `height = (semitoneOffset mod 12) / 12`.
+2. Pitch → height mapping with octave-wrap, anchored to the player's own
+   voice rather than a fixed absolute Hz band: `height = (semitoneOffset
+   mod 12) / 12`, where semitone 0 is the player's own octave floor (see
+   item 3 and section 9) — no calibration screen.
 3. Attract mode: on load, the character auto-lerps between the Y-positions
    of upcoming pipe gaps (no mic needed); the moment sustained voiced pitch
-   is detected, control hands off to the player at that same height (no
-   snap/teleport).
+   is detected, that pitch sets the octave floor for the run and control
+   hands off to the player at that same height (no snap/teleport, no
+   separate calibration step).
 4. Procedural pipe spawner with difficulty ramp (speed and/or gap size
    change with score or elapsed time).
 5. Collision detection → death → end screen.
@@ -525,6 +567,10 @@ PitchSample {
 8. Share: generate a shareable score card image and invoke the native
    share sheet.
 9. Mic permission flow.
+10. Adaptive octave re-centering: a rolling window of sung pitch during a
+    run slowly drifts the octave floor if the player is consistently
+    pushing against the top or bottom edge, so the mapping tracks natural
+    drift/fatigue without ever pausing the run.
 
 **v1.1 (nice-to-have):**
 - Replace scripted attract-mode lerp with a ghost replay of the player's
@@ -590,9 +636,18 @@ mic-permission and native-share API surface against the notes in section
 - **Risk (v2):** Leaderboard cheating via a prerecorded held tone, once a
   global leaderboard ships. **Mitigation:** server-side score-vs-duration
   sanity caps and submission rate limiting via UGS.
-- **Decision:** no calibration step — assume every player can comfortably
-  sing across at least one octave, and tune the fixed octave range in
-  `GameConfig` to that assumption instead of measuring it per player.
+- **Risk:** a fixed absolute-Hz octave band excludes voices that sit
+  outside it (bass vs. soprano), but a dedicated calibration screen adds
+  friction before the first run.
+  **Decision:** no calibration screen. Anchor the octave floor implicitly
+  to the first ~`anchorCaptureWindowMs` of stable pitch captured during the
+  attract-to-play handoff (already a required action — see feature 3),
+  clamped to `vocalRangeClampMinHz`/`Max` so a stray cough or thump can't
+  become the anchor. Pair this with adaptive re-centering during the run
+  (feature 10) — a rolling pitch window that drifts the floor if the
+  player consistently presses against the top or bottom edge, covering
+  fatigue/drift without stopping play. Together these replace explicit
+  calibration while still fitting the octave to the individual player.
 
 ## 10. Art style brainstorm
 Four directions considered:
@@ -628,9 +683,20 @@ style A's neon palette as a "night mode" cosmetic skin for v1.1.
   every frame; prefer it over a pure-FFT approach, which is less accurate
   for a voice's fundamental frequency.
 - **Hz → height mapping:** convert Hz to a MIDI note number via
-  `69 + 12 * log2(f / 440)`, take `semitone mod 12` against the fixed
-  range in `GameConfig`, normalize to 0–1, and use that as the target Y.
+  `69 + 12 * log2(f / 440)`, subtract the run's `octaveFloor` note, take
+  the result `mod 12`, normalize to 0–1, and use that as the target Y.
   The modulo operation *is* the octave-wrap.
+- **Octave floor anchor:** during the attract-to-play handoff, once pitch
+  has been stable (low variance) for `anchorCaptureWindowMs`, set
+  `octaveFloor` to that note, clamped into
+  `[vocalRangeClampMinHz, vocalRangeClampMaxHz]`. This is the entire
+  "calibration" — it rides on the handoff that already has to happen for
+  the game to start, so there's no separate screen or wait.
+- **Adaptive re-centering:** maintain a rolling buffer of sung notes over
+  `recenterWindowSec`; if the buffer's mean sits persistently near 0 or 12
+  (i.e., the player is hugging an edge), nudge `octaveFloor` by up to
+  `recenterDriftRatePerSec` per second toward the buffer's center. Runs
+  as a slow background correction — never a visible jump.
 - **Smoothing:** exponential moving average or `Mathf.SmoothDamp` on the
   target height to absorb vibrato jitter; clamp max speed so a voice crack
   can't teleport the character across the screen instantly.
