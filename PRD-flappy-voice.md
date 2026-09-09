@@ -1,5 +1,10 @@
 # PRD — Flappy Voice
 
+> **Status: original spec, partly superseded.** The mechanic has moved on since this was written —
+> no octave wrap, a two-octave range, gaps sized in notes, and the first sung note aimed at the gap
+> ahead rather than at mid-range. See [Docs/mechanics.md](Docs/mechanics.md) for current behaviour
+> and the [README](README.md) for a diff. This file is kept as the record of intent.
+
 ## 1. Summary
 Flappy Voice is a Flappy-Bird-style endless flyer where the player's singing
 pitch — not taps — controls the character's height. Higher pitch = higher on
