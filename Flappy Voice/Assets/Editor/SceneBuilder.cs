@@ -28,6 +28,7 @@ namespace FlappyVoice.Editor
         private const string ArtFolder = "Assets/Art/Placeholder";
         private const string BirdSpritePath = "Assets/Art/Placeholder/Bird.png";
         private const string PipeSpritePath = "Assets/Art/Placeholder/PipeSection.png";
+        private const string SolidSpritePath = "Assets/Art/Placeholder/Solid.png";
         private const int PixelsPerUnit = 64;
 
         private static readonly Vector2 ReferenceResolution = new Vector2(1080f, 1920f);
@@ -59,6 +60,7 @@ namespace FlappyVoice.Editor
             GameConfig config = EnsureConfig();
             Sprite birdSprite = EnsureBirdSprite();
             Sprite pipeSprite = EnsurePipeSprite();
+            Sprite solidSprite = EnsureSolidSprite();
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -80,14 +82,19 @@ namespace FlappyVoice.Editor
             GameObject heightGo = new GameObject("HeightSources");
             VoiceHeightSource voiceHeight = heightGo.AddComponent<VoiceHeightSource>();
             AttractPilot attractPilot = heightGo.AddComponent<AttractPilot>();
+            // TODO: development aid, delete this component and DevPanel before shipping.
+            DevHeightSource devHeight = heightGo.AddComponent<DevHeightSource>();
 
             GameObject spawnerGo = new GameObject("PipeSpawner");
             PipeSpawner pipeSpawner = spawnerGo.AddComponent<PipeSpawner>();
 
             PlayerController player = BuildPlayer(config, birdSprite);
 
+            NoteBarUI noteBar = BuildNoteBar(solidSprite);
+
             Canvas canvas = BuildCanvas(camera);
             HudUI hud = BuildHud(canvas.transform);
+            DevPanelUI devPanel = BuildDevPanel(canvas.transform);
             PitchMeterUI pitchMeter = BuildPitchMeter(canvas.transform);
             EndScreenUI endScreen = BuildEndScreen(canvas.transform, camera);
 
@@ -96,13 +103,16 @@ namespace FlappyVoice.Editor
             voiceHeight.Configure(config, pitchTracker);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
             hud.Configure(scoreManager, pitchTracker, stateManager);
+            noteBar.Configure(config, voiceHeight, devHeight, camera);
+            devPanel.Configure(config, devHeight, voiceHeight);
             pitchMeter.Configure(voiceHeight, pitchTracker);
             endScreen.Configure(stateManager, scoreManager, shareService);
 
             UnityEngine.Object[] candidates =
             {
                 config, stateManager, scoreManager, shareService, microphoneInput, pitchTracker,
-                voiceHeight, attractPilot, pipeSpawner, player, camera, hud, pitchMeter, endScreen,
+                voiceHeight, attractPilot, devHeight, pipeSpawner, player, camera, hud, noteBar,
+                devPanel, pitchMeter, endScreen,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
 
@@ -113,9 +123,12 @@ namespace FlappyVoice.Editor
             AutoWireByType(pitchTracker, candidates);
             AutoWireByType(voiceHeight, candidates);
             AutoWireByType(attractPilot, candidates);
+            AutoWireByType(devHeight, candidates);
             AutoWireByType(pipeSpawner, candidates);
             AutoWireByType(player, candidates);
             AutoWireByType(hud, candidates);
+            AutoWireByType(noteBar, candidates);
+            AutoWireByType(devPanel, candidates);
             AutoWireByType(pitchMeter, candidates);
             AutoWireByType(endScreen, candidates);
 
@@ -133,7 +146,8 @@ namespace FlappyVoice.Editor
             GameObject bootstrapGo = new GameObject("GameBootstrap");
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
-                pitchTracker, voiceHeight, attractPilot, pipeSpawner, player, hud, pitchMeter, endScreen);
+                pitchTracker, voiceHeight, attractPilot, devHeight, pipeSpawner, player, camera, hud,
+                noteBar, devPanel, pitchMeter, endScreen);
             EditorUtility.SetDirty(bootstrap);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -458,6 +472,136 @@ namespace FlappyVoice.Editor
             return hud;
         }
 
+        // World space, not canvas space: the bar has to line up with pipe gaps and with the bird,
+        // and those are world objects. A canvas-space bar would only agree with them at the one
+        // aspect ratio it was authored at.
+        private static NoteBarUI BuildNoteBar(Sprite solidSprite)
+        {
+            GameObject root = new GameObject("NoteBar");
+            NoteBarUI noteBar = root.AddComponent<NoteBarUI>();
+
+            GameObject barGo = new GameObject("Bar");
+            barGo.transform.SetParent(root.transform, false);
+            SpriteRenderer bar = barGo.AddComponent<SpriteRenderer>();
+            bar.sprite = solidSprite;
+            bar.color = new Color(1f, 1f, 1f, 0.75f);
+            // Above the pipes and their note chips (5-7), below the bird (10).
+            bar.sortingOrder = 8;
+
+            GameObject labelGo = new GameObject("NoteLetter", typeof(RectTransform));
+            labelGo.transform.SetParent(root.transform, false);
+            RectTransform rect = (RectTransform)labelGo.transform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(1.6f, 0.8f);
+
+            TextMeshPro label = labelGo.AddComponent<TextMeshPro>();
+            TMP_FontAsset font = ResolveFont();
+            if (font != null)
+            {
+                label.font = font;
+            }
+            label.text = "--";
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.alignment = TextAlignmentOptions.Left;
+            label.fontStyle = FontStyles.Bold;
+            label.color = new Color(1f, 1f, 1f, 0.75f);
+            label.raycastTarget = false;
+            label.fontSize = 10f;
+            label.fontSizeMin = 3f;
+            label.fontSizeMax = 12f;
+            label.enableAutoSizing = true;
+            label.sortingOrder = 9;
+
+            SerializedObject so = new SerializedObject(noteBar);
+            SetRef(so, "bar", bar);
+            SetRef(so, "noteLabel", label);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return noteBar;
+        }
+
+        // TODO: development aid. Delete this builder, DevPanelUI and DevHeightSource before shipping.
+        private static DevPanelUI BuildDevPanel(Transform canvas)
+        {
+            GameObject root = NewUI("DevPanel (TODO remove)", canvas);
+            Place(root, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(30f, 0f),
+                new Vector2(180f, 1240f));
+            DevPanelUI panel = root.AddComponent<DevPanelUI>();
+
+            GameObject toggleGo = NewUI("DevToggle", root.transform);
+            Place(toggleGo, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(76f, 76f));
+            Image toggleBg = NewImage("Background", toggleGo.transform, new Color(0f, 0f, 0f, 0.6f));
+            Stretch(toggleBg.gameObject);
+            toggleBg.raycastTarget = true;
+            Image check = NewImage("Checkmark", toggleBg.transform, new Color(0.36f, 0.85f, 0.51f, 1f));
+            RectTransform checkRect = check.rectTransform;
+            checkRect.anchorMin = Vector2.zero;
+            checkRect.anchorMax = Vector2.one;
+            checkRect.offsetMin = new Vector2(12f, 12f);
+            checkRect.offsetMax = new Vector2(-12f, -12f);
+
+            Toggle toggle = toggleGo.AddComponent<Toggle>();
+            toggle.targetGraphic = toggleBg;
+            toggle.graphic = check;
+            toggle.isOn = false;
+
+            TextMeshProUGUI toggleLabel = NewText("ToggleLabel", root.transform, "DEV", 34f,
+                TextAlignmentOptions.Center);
+            Place(toggleLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -84f),
+                new Vector2(180f, 44f));
+            toggleLabel.color = new Color(1f, 1f, 1f, 0.8f);
+
+            GameObject groupGo = NewUI("SliderGroup", root.transform);
+            Place(groupGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(180f, 1080f));
+            CanvasGroup group = groupGo.AddComponent<CanvasGroup>();
+            group.alpha = 0.35f;
+            group.interactable = false;
+            group.blocksRaycasts = false;
+
+            GameObject sliderGo = NewUI("HeightSlider", groupGo.transform);
+            Place(sliderGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 100f),
+                new Vector2(68f, 940f));
+            Image sliderBg = NewImage("Background", sliderGo.transform, new Color(0f, 0f, 0f, 0.55f));
+            Stretch(sliderBg.gameObject);
+            sliderBg.raycastTarget = true;
+
+            GameObject fillArea = NewUI("Fill Area", sliderGo.transform);
+            Stretch(fillArea);
+            Image fill = NewImage("Fill", fillArea.transform, new Color(0.32f, 0.52f, 0.92f, 0.85f));
+            Stretch(fill.gameObject);
+
+            GameObject handleArea = NewUI("Handle Slide Area", sliderGo.transform);
+            Stretch(handleArea);
+            Image handle = NewImage("Handle", handleArea.transform, Color.white);
+            handle.raycastTarget = true;
+            RectTransform handleRect = handle.rectTransform;
+            handleRect.sizeDelta = new Vector2(0f, 60f);
+
+            Slider slider = sliderGo.AddComponent<Slider>();
+            slider.direction = Slider.Direction.BottomToTop;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.wholeNumbers = false;
+            slider.fillRect = fill.rectTransform;
+            slider.handleRect = handleRect;
+            slider.targetGraphic = handle;
+            slider.SetValueWithoutNotify(0.5f);
+
+            TextMeshProUGUI readout = NewText("Readout", groupGo.transform, "DEV", 40f,
+                TextAlignmentOptions.Center);
+            Place(readout.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 20f),
+                new Vector2(180f, 64f));
+
+            SerializedObject so = new SerializedObject(panel);
+            SetRef(so, "enableToggle", toggle);
+            SetRef(so, "heightSlider", slider);
+            SetRef(so, "sliderGroup", group);
+            SetRef(so, "readout", readout);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return panel;
+        }
+
         // TODO: the meter is built but left INACTIVE on purpose. It is not dead code - the bar was
         // drawn for the old wrapping octave and needs a redesign for the clamped A-to-A range
         // before it returns, so the object stays in the scene under an obviously-marked name.
@@ -696,8 +840,9 @@ namespace FlappyVoice.Editor
         private static void WireBootstrap(GameBootstrap bootstrap, GameConfig config,
             GameStateManager stateManager, ScoreManager scoreManager, ShareService shareService,
             MicrophoneInput microphoneInput, PitchTracker pitchTracker, VoiceHeightSource voiceHeight,
-            AttractPilot attractPilot, PipeSpawner pipeSpawner, PlayerController player,
-            HudUI hud, PitchMeterUI pitchMeter, EndScreenUI endScreen)
+            AttractPilot attractPilot, DevHeightSource devHeight, PipeSpawner pipeSpawner,
+            PlayerController player, Camera viewCamera, HudUI hud, NoteBarUI noteBar,
+            DevPanelUI devPanel, PitchMeterUI pitchMeter, EndScreenUI endScreen)
         {
             SerializedObject so = new SerializedObject(bootstrap);
             SetRef(so, "config", AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath));
@@ -706,11 +851,15 @@ namespace FlappyVoice.Editor
             SetRef(so, "pipeSpawner", pipeSpawner);
             SetRef(so, "attractPilot", attractPilot);
             SetRef(so, "voiceHeightSource", voiceHeight);
+            SetRef(so, "devHeightSource", devHeight);
             SetRef(so, "player", player);
+            SetRef(so, "viewCamera", viewCamera);
             SetRef(so, "pitchTracker", pitchTracker);
             SetRef(so, "microphoneInput", microphoneInput);
             SetRef(so, "shareService", shareService);
             SetRef(so, "hud", hud);
+            SetRef(so, "noteBar", noteBar);
+            SetRef(so, "devPanel", devPanel);
             SetRef(so, "pitchMeter", pitchMeter);
             SetRef(so, "endScreen", endScreen);
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -898,6 +1047,18 @@ namespace FlappyVoice.Editor
         private static Sprite EnsurePipeSprite()
         {
             return EnsureSprite(PipeSpritePath, 64, 64, PaintPipe, SpriteMeshType.FullRect);
+        }
+
+        private static Sprite EnsureSolidSprite()
+        {
+            // The pipe sprite has a 3px inset border, which at the note bar's ~0.07 unit thickness
+            // is the entire bar. This one is flat white so it can be scaled to any size.
+            return EnsureSprite(SolidSpritePath, 64, 64, PaintSolid, SpriteMeshType.FullRect);
+        }
+
+        private static Color32 PaintSolid(int x, int y, int width, int height)
+        {
+            return new Color32(255, 255, 255, 255);
         }
 
         private static Color32 PaintBird(int x, int y, int width, int height)

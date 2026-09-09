@@ -10,12 +10,17 @@ namespace FlappyVoice.Gameplay
         private GameStateManager _state;
         private VoiceHeightSource _voice;
         private AttractPilot _attract;
+        private DevHeightSource _dev;
         private ScoreManager _score;
+
+        // Mean of 1 - x^2 over a full ballistic arc. Both halves are the same shape, so the value
+        // holds for any rise/fall split.
+        private const float MeanUnitHeight = 2f / 3f;
 
         private Rigidbody2D _body;
         private float _currentY;
         private float _dampVelocity;
-        private float _flapPhase;
+        private float _flapTime;
 
         public float CurrentHeight01 => _config == null
             ? 0.5f
@@ -69,6 +74,14 @@ namespace FlappyVoice.Gameplay
             _score = score;
         }
 
+        // TODO: development aid, remove with DevHeightSource. When dev mode is on it outranks both
+        // the voice and the attract pilot, and it also starts the run, because there is no sung note
+        // to trigger the usual attract -> playing handoff.
+        public void SetDevSource(DevHeightSource dev)
+        {
+            _dev = dev;
+        }
+
         private void OnDestroy()
         {
             if (_state != null)
@@ -86,7 +99,7 @@ namespace FlappyVoice.Gameplay
 
             _currentY = (_config.PlayfieldMinY + _config.PlayfieldMaxY) * 0.5f;
             _dampVelocity = 0f;
-            _flapPhase = 0f;
+            _flapTime = 0f;
             ApplyPosition(_currentY);
         }
 
@@ -115,8 +128,9 @@ namespace FlappyVoice.Gameplay
             }
 
             GameState state = _state != null ? _state.State : GameState.Attract;
+            bool devDriving = _dev != null && _dev.Enabled;
 
-            if (state == GameState.Attract && _state != null && _voice != null && _voice.IsAnchored)
+            if (state == GameState.Attract && _state != null && (devDriving || (_voice != null && _voice.IsAnchored)))
             {
                 _state.StartRun();
                 state = _state.State;
@@ -127,7 +141,9 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
-            IHeightSource source = state == GameState.Playing ? (IHeightSource)_voice : _attract;
+            IHeightSource source = devDriving
+                ? _dev
+                : state == GameState.Playing ? (IHeightSource)_voice : _attract;
             float target01 = source != null ? Mathf.Clamp01(source.TargetHeight01) : 0.5f;
             float targetY = Mathf.Lerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, target01);
 
@@ -145,18 +161,53 @@ namespace FlappyVoice.Gameplay
 
             // The flap is added after SmoothDamp and after the MaxVerticalSpeed step clamp, both
             // of which govern the pitch-driven position only. Folding it in here keeps the bob at
-            // full amplitude (its own ~5.5 u/s peak would otherwise be eaten by the speed budget)
+            // full amplitude (its own peak speed would otherwise be eaten by the speed budget)
             // while still moving the collider, so flapping up into a pipe kills the player.
-            _flapPhase += Mathf.PI * 2f * Mathf.Max(0f, _config.FlapCyclesPerSec) * deltaTime;
-            if (_flapPhase > Mathf.PI * 2f)
+            float period = 1f / Mathf.Max(0.01f, _config.FlapCyclesPerSec);
+            _flapTime += deltaTime;
+            if (_flapTime >= period)
             {
-                _flapPhase -= Mathf.PI * 2f;
+                _flapTime -= period * Mathf.Floor(_flapTime / period);
             }
 
-            float flapOffset = Mathf.Sin(_flapPhase) * _config.FlapAmplitudeUnits;
+            float flapOffset = FlapOffset(_flapTime, period, _config.FlapAmplitudeUnits, _config.FlapRiseFraction);
             float renderedY = Mathf.Clamp(y + flapOffset, _config.PlayfieldMinY, _config.PlayfieldMaxY);
 
             ApplyPosition(renderedY);
+        }
+
+        // Two ballistic arcs rather than a sine: constant acceleration on the way up and on the way
+        // down, meeting in a cusp at the bottom of the stroke. That cusp is what reads as a bounce -
+        // a sine eases through the bottom and reads as floating. riseFraction < 0.5 spends less of
+        // the period going up than coming down, i.e. a harder launch than fall.
+        //
+        // Returns an offset centred on the stroke's TIME average, not on its geometric midpoint: a
+        // ballistic arc lingers near the apex, so centring on the midpoint would make the bird read
+        // as sitting above the note it is actually singing. peakToPeakUnits is the full travel.
+        public static float FlapOffset(float time, float period, float peakToPeakUnits, float riseFraction)
+        {
+            if (period <= 0f || peakToPeakUnits == 0f)
+            {
+                return 0f;
+            }
+
+            float t = Mathf.Repeat(time, period);
+            float rise = Mathf.Clamp(riseFraction, 0.05f, 0.95f) * period;
+            float fall = period - rise;
+
+            float unit;
+            if (t < rise)
+            {
+                float remaining = 1f - (t / rise);
+                unit = 1f - (remaining * remaining);
+            }
+            else
+            {
+                float fallen = fall > 0f ? (t - rise) / fall : 1f;
+                unit = 1f - (fallen * fallen);
+            }
+
+            return (unit - MeanUnitHeight) * peakToPeakUnits;
         }
 
         private void ApplyPosition(float y)

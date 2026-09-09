@@ -14,8 +14,11 @@ namespace FlappyVoice.Config
         [SerializeField] private float _minSpawnIntervalSec = 1.1f;
         [SerializeField] private AnimationCurve _difficultyRampCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
         [SerializeField] private float _difficultyRampDurationSec = 90f;
+        // Fallbacks only. PipeSpawner derives the real spawn/despawn X from the camera frustum so
+        // pipes enter and leave outside the visible edges at every aspect ratio.
         [SerializeField] private float _pipeSpawnXOffset = 5f;
         [SerializeField] private float _pipeDespawnX = -5f;
+        [SerializeField] private float _pipeEdgeMarginUnits = 0.8f;
         [SerializeField] private float _playfieldMinY = -4.5f;
         [SerializeField] private float _playfieldMaxY = 4.5f;
 
@@ -40,8 +43,12 @@ namespace FlappyVoice.Config
         [SerializeField] private float _maxVerticalSpeed = 9f;
 
         [Header("Flap")]
-        [SerializeField] private float _flapAmplitudeUnits = 0.16f;
-        [SerializeField] private float _flapCyclesPerSec = 2.5f;
+        // Full peak-to-peak travel of the bob, not a half-amplitude: it is subtracted from the pipe
+        // gap on both sides, so raising it eats the margin for error on every pipe.
+        [SerializeField] private float _flapAmplitudeUnits = 0.45f;
+        [SerializeField] private float _flapCyclesPerSec = 3.4f;
+        // Share of each stroke spent rising. Below 0.5 = snappier launch than fall.
+        [SerializeField] private float _flapRiseFraction = 0.42f;
 
         public float PipeGapSize => _pipeGapSize;
         public float MinPipeGapSize => _minPipeGapSize;
@@ -53,6 +60,7 @@ namespace FlappyVoice.Config
         public float DifficultyRampDurationSec => _difficultyRampDurationSec;
         public float PipeSpawnXOffset => _pipeSpawnXOffset;
         public float PipeDespawnX => _pipeDespawnX;
+        public float PipeEdgeMarginUnits => _pipeEdgeMarginUnits;
         public float PlayfieldMinY => _playfieldMinY;
         public float PlayfieldMaxY => _playfieldMaxY;
 
@@ -74,6 +82,7 @@ namespace FlappyVoice.Config
         public float MaxVerticalSpeed => _maxVerticalSpeed;
         public float FlapAmplitudeUnits => _flapAmplitudeUnits;
         public float FlapCyclesPerSec => _flapCyclesPerSec;
+        public float FlapRiseFraction => _flapRiseFraction;
 
         public static GameConfig CreateDefault()
         {
@@ -89,6 +98,7 @@ namespace FlappyVoice.Config
             c._difficultyRampDurationSec = 90f;
             c._pipeSpawnXOffset = 5f;
             c._pipeDespawnX = -5f;
+            c._pipeEdgeMarginUnits = 0.8f;
             c._playfieldMinY = -4.5f;
             c._playfieldMaxY = 4.5f;
 
@@ -108,8 +118,9 @@ namespace FlappyVoice.Config
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
-            c._flapAmplitudeUnits = 0.16f;
-            c._flapCyclesPerSec = 2.5f;
+            c._flapAmplitudeUnits = 0.45f;
+            c._flapCyclesPerSec = 3.4f;
+            c._flapRiseFraction = 0.42f;
 
             c.name = "GameConfig (Default)";
             return c;

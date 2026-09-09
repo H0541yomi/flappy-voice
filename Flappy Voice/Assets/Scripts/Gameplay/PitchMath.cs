@@ -6,15 +6,14 @@ namespace FlappyVoice.Gameplay
     {
         public const float A4Hz = 440f;
         public const int A4Midi = 69;
-        public const int APitchClass = 9;
 
         private const double InvLog2 = 1.4426950408889634;
 
-        // Interned literals, indexed by semitone offset above the A floor. Returned by reference so
-        // per-pipe labelling on the hot path never allocates.
-        private static readonly string[] OffsetNoteNames =
+        // Interned literals indexed by pitch class (midi % 12, C = 0). Returned by reference so
+        // per-pipe and per-frame labelling never allocates.
+        private static readonly string[] ChromaticNames =
         {
-            "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A"
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
         };
 
         public static float HzToMidi(float hz)
@@ -28,28 +27,24 @@ namespace FlappyVoice.Gameplay
             return (float)(A4Hz * Math.Pow(2.0, (midi - A4Midi) / 12.0));
         }
 
-        public static float WrapToOctaveHeight(float midi, float floorMidi, int octaveWidthSemitones)
+        public static int RoundToSemitone(float midi)
         {
-            if (octaveWidthSemitones <= 0) return 0f;
-
-            float width = octaveWidthSemitones;
-            // C# '%' keeps the sign of the dividend; singing below the anchored floor is normal
-            // and must wrap to the TOP of the playfield, never produce a negative height.
-            float rel = (midi - floorMidi) % width;
-            if (rel < 0f) rel += width;
-
-            float height = rel / width;
-            if (height < 0f || height >= 1f) return 0f;
-            return height;
+            return (int)Math.Round((double)midi, MidpointRounding.AwayFromZero);
         }
 
-        // Highest midi note with pitch class A (midi % 12 == 9) that is <= midi. Every pipe's note
-        // letter is derived from the floor, so the floor may only ever be an A.
-        public static float NearestAFloorAtOrBelow(float midi)
+        // How far the playable range extends BELOW the note the player first sang. Integer division
+        // keeps the floor on a whole semitone even for an odd range width, so every pipe offset
+        // still lands on a real note that can be named and sung.
+        public static int SemitonesBelowCenter(int rangeWidthSemitones)
         {
-            double rel = (double)midi - APitchClass;
-            double octaves = Math.Floor(rel / 12.0);
-            return (float)(octaves * 12.0 + APitchClass);
+            return rangeWidthSemitones <= 0 ? 0 : rangeWidthSemitones / 2;
+        }
+
+        // The first sung note is rounded to the nearest semitone and placed at the MIDDLE of the
+        // screen; the range then runs half a span down and half a span up from there.
+        public static float CenteredFloorMidi(float centerMidi, int rangeWidthSemitones)
+        {
+            return RoundToSemitone(centerMidi) - SemitonesBelowCenter(rangeWidthSemitones);
         }
 
         public static float ClampToOctaveHeight(float midi, float floorMidi, int octaveWidthSemitones)
@@ -62,11 +57,10 @@ namespace FlappyVoice.Gameplay
             return height;
         }
 
-        public static string NoteNameForOffset(int semitoneOffset)
+        public static string NoteNameForMidi(int midi)
         {
-            if (semitoneOffset < 0) semitoneOffset = 0;
-            else if (semitoneOffset >= OffsetNoteNames.Length) semitoneOffset = OffsetNoteNames.Length - 1;
-            return OffsetNoteNames[semitoneOffset];
+            int index = ((midi % 12) + 12) % 12;
+            return ChromaticNames[index];
         }
 
         public static float HeightForOffset(int semitoneOffset, int octaveWidthSemitones)

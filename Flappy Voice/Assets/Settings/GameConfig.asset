@@ -45,6 +45,7 @@ MonoBehaviour:
   _difficultyRampDurationSec: 90
   _pipeSpawnXOffset: 5
   _pipeDespawnX: -5
+  _pipeEdgeMarginUnits: 0.8
   _playfieldMinY: -4.5
   _playfieldMaxY: 4.5
   _octaveWidthSemitones: 12
@@ -61,5 +62,6 @@ MonoBehaviour:
   _yinThreshold: 0.15
   _heightSmoothTimeSec: 0.06
   _maxVerticalSpeed: 9
-  _flapAmplitudeUnits: 0.16
-  _flapCyclesPerSec: 2.5
+  _flapAmplitudeUnits: 0.45
+  _flapCyclesPerSec: 3.4
+  _flapRiseFraction: 0.42

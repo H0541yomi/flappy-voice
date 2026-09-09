@@ -1,4 +1,3 @@
-using System;
 using FlappyVoice.Gameplay;
 using NUnit.Framework;
 
@@ -6,12 +5,6 @@ namespace FlappyVoice.Tests
 {
     public class PitchMathTests
     {
-        private static int PitchClass(float midi)
-        {
-            int semitone = (int)Math.Round(midi);
-            return ((semitone % 12) + 12) % 12;
-        }
-
         [Test]
         public void HzToMidi_A440_Is69()
         {
@@ -49,68 +42,74 @@ namespace FlappyVoice.Tests
             Assert.That(PitchMath.HzToMidi(220f) - PitchMath.HzToMidi(440f), Is.EqualTo(-12f).Within(1e-4f));
         }
 
-        // ---- A floor selection -------------------------------------------------------------
+        // ---- rounding to a real note -------------------------------------------------------
 
-        [Test]
-        public void APitchClass_MatchesA4()
+        [TestCase(57f, 57)]
+        [TestCase(57.49f, 57)]
+        [TestCase(57.5f, 58)]
+        [TestCase(56.51f, 57)]
+        [TestCase(56.5f, 57)]   // away-from-zero, so .5 rounds up rather than to even
+        [TestCase(-0.5f, -1)]
+        public void RoundToSemitone_RoundsHalfAwayFromZero(float midi, int expected)
         {
-            Assert.That(PitchMath.APitchClass, Is.EqualTo(9));
-            Assert.That(PitchMath.A4Midi % 12, Is.EqualTo(PitchMath.APitchClass));
+            Assert.That(PitchMath.RoundToSemitone(midi), Is.EqualTo(expected));
         }
 
-        [TestCase(9f, 9f)]
-        [TestCase(21f, 21f)]
-        [TestCase(45f, 45f)]
-        [TestCase(57f, 57f)]
-        [TestCase(69f, 69f)]
-        public void NearestAFloorAtOrBelow_ExactA_IsItself(float midi, float expected)
+        // ---- centred range ------------------------------------------------------------------
+
+        [TestCase(12, 6)]
+        [TestCase(11, 5)]   // odd widths keep the floor on a whole semitone
+        [TestCase(1, 0)]
+        [TestCase(0, 0)]
+        [TestCase(-4, 0)]
+        public void SemitonesBelowCenter_IsHalfTheWidthRoundedDown(int width, int expected)
         {
-            Assert.That(PitchMath.NearestAFloorAtOrBelow(midi), Is.EqualTo(expected).Within(1e-4f));
+            Assert.That(PitchMath.SemitonesBelowCenter(width), Is.EqualTo(expected));
         }
 
-        [TestCase(45.01f, 45f)]
-        [TestCase(45.5f, 45f)]
-        [TestCase(46f, 45f)]
-        [TestCase(56.99f, 45f)]
-        [TestCase(44.99f, 33f)]
-        [TestCase(44f, 33f)]
-        [TestCase(57.5f, 57f)]
-        [TestCase(68.5f, 57f)]
-        public void NearestAFloorAtOrBelow_JustAboveOrBelowAnA(float midi, float expected)
+        [TestCase(51f, 45f)]     // D#3 sung -> floor A2
+        [TestCase(69f, 63f)]     // A4 sung -> floor D#4
+        [TestCase(51.4f, 45f)]   // rounds down to D#3 first
+        [TestCase(51.6f, 46f)]   // rounds up to E3 first
+        public void CenteredFloorMidi_PutsTheSungNoteInTheMiddle(float sung, float expectedFloor)
         {
-            Assert.That(PitchMath.NearestAFloorAtOrBelow(midi), Is.EqualTo(expected).Within(1e-4f));
-        }
-
-        [Test]
-        public void NearestAFloorAtOrBelow_DSharp3_IsA2()
-        {
-            // D#3 = midi 51 -> floor A2 = 45, ceiling A3 = 57.
-            Assert.That(PitchMath.NearestAFloorAtOrBelow(51f), Is.EqualTo(45f).Within(1e-4f));
-        }
-
-        [TestCase(60f, 57f)]   // C4
-        [TestCase(62f, 57f)]   // D4
-        [TestCase(48f, 45f)]   // C3
-        [TestCase(0f, -3f)]    // below midi 9 the floor goes negative but stays an A
-        [TestCase(-1f, -3f)]
-        public void NearestAFloorAtOrBelow_KnownNotes(float midi, float expected)
-        {
-            Assert.That(PitchMath.NearestAFloorAtOrBelow(midi), Is.EqualTo(expected).Within(1e-4f));
+            Assert.That(PitchMath.CenteredFloorMidi(sung, 12), Is.EqualTo(expectedFloor).Within(1e-4f));
         }
 
         [Test]
-        public void NearestAFloorAtOrBelow_AlwaysAnAAtOrBelowInput()
+        public void CenteredFloorMidi_SungNoteLandsAtExactlyHalfHeight()
         {
-            for (float midi = -20f; midi <= 130f; midi += 0.31f)
+            for (float midi = 40f; midi <= 80f; midi += 0.25f)
             {
-                float floor = PitchMath.NearestAFloorAtOrBelow(midi);
-                Assert.That(PitchClass(floor), Is.EqualTo(PitchMath.APitchClass), "floor must be an A");
-                Assert.That(floor, Is.LessThanOrEqualTo(midi + 1e-4f));
-                Assert.That(midi - floor, Is.LessThan(12f + 1e-4f));
+                float floor = PitchMath.CenteredFloorMidi(midi, 12);
+                float rounded = PitchMath.RoundToSemitone(midi);
+                Assert.That(
+                    PitchMath.ClampToOctaveHeight(rounded, floor, 12),
+                    Is.EqualTo(0.5f).Within(1e-5f),
+                    "the first note must map to mid-screen, sung midi " + midi);
             }
         }
 
-        // ---- clamped A-to-A height --------------------------------------------------------
+        [Test]
+        public void CenteredFloorMidi_IsAlwaysAWholeSemitone()
+        {
+            for (float midi = -10f; midi <= 120f; midi += 0.31f)
+            {
+                foreach (int width in new[] { 11, 12, 13 })
+                {
+                    float floor = PitchMath.CenteredFloorMidi(midi, width);
+                    Assert.That(floor, Is.EqualTo(Mathf_Round(floor)).Within(1e-6f),
+                        "pipe letters need the floor on a real note, width " + width);
+                }
+            }
+        }
+
+        private static float Mathf_Round(float value)
+        {
+            return (float)System.Math.Round((double)value);
+        }
+
+        // ---- clamped range height -----------------------------------------------------------
 
         [Test]
         public void ClampToOctaveHeight_AtFloor_IsZero()
@@ -119,7 +118,7 @@ namespace FlappyVoice.Tests
         }
 
         [Test]
-        public void ClampToOctaveHeight_HalfOctave_IsHalf()
+        public void ClampToOctaveHeight_HalfRange_IsHalf()
         {
             Assert.That(PitchMath.ClampToOctaveHeight(51f, 45f, 12), Is.EqualTo(0.5f).Within(1e-5f));
         }
@@ -127,7 +126,6 @@ namespace FlappyVoice.Tests
         [Test]
         public void ClampToOctaveHeight_AtCeiling_IsOne()
         {
-            // The top A is a real, distinct position now - it does NOT wrap back to zero.
             Assert.That(PitchMath.ClampToOctaveHeight(57f, 45f, 12), Is.EqualTo(1f).Within(1e-5f));
         }
 
@@ -170,46 +168,55 @@ namespace FlappyVoice.Tests
             Assert.That(PitchMath.ClampToOctaveHeight(51f, 45f, -12), Is.EqualTo(0f));
         }
 
-        // ---- note letters -----------------------------------------------------------------
+        // ---- note letters -------------------------------------------------------------------
 
-        [TestCase(0, "A")]
-        [TestCase(1, "A#")]
-        [TestCase(2, "B")]
-        [TestCase(3, "C")]
-        [TestCase(4, "C#")]
-        [TestCase(5, "D")]
-        [TestCase(6, "D#")]
-        [TestCase(7, "E")]
-        [TestCase(8, "F")]
-        [TestCase(9, "F#")]
-        [TestCase(10, "G")]
-        [TestCase(11, "G#")]
-        [TestCase(12, "A")]
-        public void NoteNameForOffset_CoversAllThirteenOffsets(int offset, string expected)
+        [TestCase(60, "C")]
+        [TestCase(61, "C#")]
+        [TestCase(62, "D")]
+        [TestCase(63, "D#")]
+        [TestCase(64, "E")]
+        [TestCase(65, "F")]
+        [TestCase(66, "F#")]
+        [TestCase(67, "G")]
+        [TestCase(68, "G#")]
+        [TestCase(69, "A")]
+        [TestCase(70, "A#")]
+        [TestCase(71, "B")]
+        [TestCase(72, "C")]
+        public void NoteNameForMidi_CoversTheChromaticScale(int midi, string expected)
         {
-            Assert.That(PitchMath.NoteNameForOffset(offset), Is.EqualTo(expected));
+            Assert.That(PitchMath.NoteNameForMidi(midi), Is.EqualTo(expected));
         }
 
         [Test]
-        public void NoteNameForOffset_OutOfRange_ClampsToEnds()
+        public void NoteNameForMidi_HandlesNegativeMidi()
         {
-            Assert.That(PitchMath.NoteNameForOffset(-5), Is.EqualTo("A"));
-            Assert.That(PitchMath.NoteNameForOffset(99), Is.EqualTo("A"));
+            Assert.That(PitchMath.NoteNameForMidi(-1), Is.EqualTo("B"));
+            Assert.That(PitchMath.NoteNameForMidi(-12), Is.EqualTo("C"));
         }
 
         [Test]
-        public void NoteNameForOffset_ReturnsCachedInstance_NoPerCallAllocation()
+        public void NoteNameForMidi_ReturnsCachedInstance_NoPerCallAllocation()
         {
-            for (int offset = 0; offset <= 12; offset++)
+            for (int midi = 36; midi <= 84; midi++)
             {
                 Assert.That(
-                    PitchMath.NoteNameForOffset(offset),
-                    Is.SameAs(PitchMath.NoteNameForOffset(offset)),
+                    PitchMath.NoteNameForMidi(midi),
+                    Is.SameAs(PitchMath.NoteNameForMidi(midi)),
                     "must return an interned literal, not a freshly built string");
             }
         }
 
-        // ---- offset -> height -------------------------------------------------------------
+        [Test]
+        public void NoteNameForMidi_SameLetterRepeatsEveryOctave()
+        {
+            for (int midi = 24; midi <= 96; midi++)
+            {
+                Assert.That(PitchMath.NoteNameForMidi(midi), Is.SameAs(PitchMath.NoteNameForMidi(midi + 12)));
+            }
+        }
+
+        // ---- offset -> height ---------------------------------------------------------------
 
         [Test]
         public void HeightForOffset_Endpoints()
@@ -237,6 +244,8 @@ namespace FlappyVoice.Tests
             Assert.That(PitchMath.HeightForOffset(6, -12), Is.EqualTo(0f));
         }
 
+        // The spawner places a gap with HeightForOffset and the player reaches it with
+        // ClampToOctaveHeight. If these two ever disagree, pipes become unthreadable.
         [Test]
         public void HeightForOffset_AgreesWithClampToOctaveHeight()
         {
@@ -247,54 +256,6 @@ namespace FlappyVoice.Tests
                     PitchMath.HeightForOffset(offset, 12),
                     Is.EqualTo(PitchMath.ClampToOctaveHeight(floor + offset, floor, 12)).Within(1e-6f));
             }
-        }
-
-        // ---- retained wrap helper (unused by gameplay, kept on disk) -----------------------
-
-        [Test]
-        public void WrapToOctaveHeight_AtFloor_IsZero()
-        {
-            Assert.That(PitchMath.WrapToOctaveHeight(48f, 48f, 12), Is.EqualTo(0f).Within(1e-5f));
-        }
-
-        [Test]
-        public void WrapToOctaveHeight_HalfOctave_IsHalf()
-        {
-            Assert.That(PitchMath.WrapToOctaveHeight(54f, 48f, 12), Is.EqualTo(0.5f).Within(1e-5f));
-        }
-
-        [Test]
-        public void WrapToOctaveHeight_FullOctave_WrapsToZero()
-        {
-            Assert.That(PitchMath.WrapToOctaveHeight(60f, 48f, 12), Is.EqualTo(0f).Within(1e-5f));
-            Assert.That(PitchMath.WrapToOctaveHeight(72f, 48f, 12), Is.EqualTo(0f).Within(1e-5f));
-        }
-
-        [Test]
-        public void WrapToOctaveHeight_BelowFloor_WrapsToTop()
-        {
-            Assert.That(PitchMath.WrapToOctaveHeight(47f, 48f, 12), Is.EqualTo(11f / 12f).Within(1e-5f));
-            Assert.That(PitchMath.WrapToOctaveHeight(42f, 48f, 12), Is.EqualTo(0.5f).Within(1e-5f));
-            Assert.That(PitchMath.WrapToOctaveHeight(36f, 48f, 12), Is.EqualTo(0f).Within(1e-5f));
-            Assert.That(PitchMath.WrapToOctaveHeight(35f, 48f, 12), Is.EqualTo(11f / 12f).Within(1e-5f));
-        }
-
-        [Test]
-        public void WrapToOctaveHeight_AlwaysInUnitInterval()
-        {
-            for (float midi = -40f; midi <= 140f; midi += 0.37f)
-            {
-                float height = PitchMath.WrapToOctaveHeight(midi, 48f, 12);
-                Assert.That(height, Is.GreaterThanOrEqualTo(0f));
-                Assert.That(height, Is.LessThan(1f));
-            }
-        }
-
-        [Test]
-        public void WrapToOctaveHeight_NonPositiveWidth_ReturnsZero()
-        {
-            Assert.That(PitchMath.WrapToOctaveHeight(54f, 48f, 0), Is.EqualTo(0f));
-            Assert.That(PitchMath.WrapToOctaveHeight(54f, 48f, -12), Is.EqualTo(0f));
         }
     }
 }

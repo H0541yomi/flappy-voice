@@ -7,6 +7,7 @@ namespace FlappyVoice.Gameplay
     public sealed class PipeSpawner : MonoBehaviour
     {
         [SerializeField] private Pipe _pipePrefab;
+        [SerializeField] private Camera _viewCamera;
         [SerializeField] private int _poolSize = 8;
         [SerializeField] private int _maxNoteStepSemitones = 7;
         [SerializeField] private float _reachSafetyFactor = 0.55f;
@@ -14,8 +15,11 @@ namespace FlappyVoice.Gameplay
         private readonly Queue<Pipe> _pool = new Queue<Pipe>();
         private readonly List<Pipe> _active = new List<Pipe>();
 
+        private const string UnanchoredNoteLabel = "?";
+
         private GameConfig _config;
         private GameStateManager _state;
+        private VoiceHeightSource _voice;
         private float _spawnTimer;
         private float _currentInterval;
         private int _lastNoteOffset = -1;
@@ -23,6 +27,11 @@ namespace FlappyVoice.Gameplay
         public float CurrentSpeed { get; private set; }
         public float CurrentGapSize { get; private set; }
         public IReadOnlyList<Pipe> ActivePipes => _active;
+
+        private void Awake()
+        {
+            if (_viewCamera == null) _viewCamera = Camera.main;
+        }
 
         public void Configure(GameConfig config, GameStateManager state)
         {
@@ -48,11 +57,35 @@ namespace FlappyVoice.Gameplay
             ResetSpawner();
         }
 
+        // Note letters are derived from the anchored floor, which does not exist until the player
+        // has sung. Every pipe already on screen has to be relabelled the moment it does.
+        public void SetVoiceSource(VoiceHeightSource voice)
+        {
+            if (_voice != null)
+            {
+                _voice.OnAnchorChanged -= RelabelActivePipes;
+            }
+
+            _voice = voice;
+
+            if (_voice != null)
+            {
+                _voice.OnAnchorChanged += RelabelActivePipes;
+            }
+
+            RelabelActivePipes();
+        }
+
         private void OnDestroy()
         {
             if (_state != null)
             {
                 _state.OnStateChanged -= HandleStateChanged;
+            }
+
+            if (_voice != null)
+            {
+                _voice.OnAnchorChanged -= RelabelActivePipes;
             }
         }
 
@@ -117,7 +150,7 @@ namespace FlappyVoice.Gameplay
             {
                 Pipe pipe = _active[i];
                 pipe.Move(CurrentSpeed, deltaTime);
-                if (pipe.X < _config.PipeDespawnX)
+                if (pipe.X < DespawnX())
                 {
                     Recycle(i);
                 }
@@ -157,13 +190,68 @@ namespace FlappyVoice.Gameplay
             int noteOffset = PickNoteOffset();
             float gapCenterY = GapCenterYForOffset(noteOffset);
 
-            pipe.transform.position = new Vector3(_config.PipeSpawnXOffset, 0f, 0f);
+            pipe.transform.position = new Vector3(SpawnX(), 0f, 0f);
             pipe.gameObject.SetActive(true);
             pipe.Setup(gapCenterY, CurrentGapSize, _config.PlayfieldMinY, _config.PlayfieldMaxY);
-            pipe.SetNote(noteOffset, PitchMath.NoteNameForOffset(noteOffset));
+            pipe.SetNote(noteOffset, NoteLabelForOffset(noteOffset));
 
             _active.Add(pipe);
             _lastNoteOffset = noteOffset;
+        }
+
+        // Spawn and despawn are pinned to the camera frustum, not to fixed X values: at a phone's
+        // portrait aspect a fixed +-5 sits well outside the view, and in a wide editor Game view it
+        // sits well inside it, which is exactly where pipes were seen popping in and vanishing.
+        private float SpawnX()
+        {
+            return ViewCenterX() + ViewHalfWidth() + EdgeClearance();
+        }
+
+        private float DespawnX()
+        {
+            return ViewCenterX() - ViewHalfWidth() - EdgeClearance();
+        }
+
+        private float ViewCenterX()
+        {
+            return _viewCamera != null ? _viewCamera.transform.position.x : 0f;
+        }
+
+        private float ViewHalfWidth()
+        {
+            if (_viewCamera == null || !_viewCamera.orthographic)
+            {
+                // No usable camera: fall back to the authored offsets, whose magnitude is the only
+                // half-width information the config carries.
+                return Mathf.Max(Mathf.Abs(_config.PipeSpawnXOffset), Mathf.Abs(_config.PipeDespawnX));
+            }
+
+            return _viewCamera.orthographicSize * _viewCamera.aspect;
+        }
+
+        private float EdgeClearance()
+        {
+            float half = (_pipePrefab != null ? _pipePrefab.VisualWidth : 1.5f) * 0.5f;
+            return half + Mathf.Max(0f, _config.PipeEdgeMarginUnits);
+        }
+
+        private string NoteLabelForOffset(int noteOffset)
+        {
+            if (_voice == null || !_voice.IsAnchored)
+            {
+                return UnanchoredNoteLabel;
+            }
+
+            return PitchMath.NoteNameForMidi(PitchMath.RoundToSemitone(_voice.FloorMidi) + noteOffset);
+        }
+
+        private void RelabelActivePipes()
+        {
+            for (int i = 0; i < _active.Count; i++)
+            {
+                Pipe pipe = _active[i];
+                pipe.SetNote(pipe.NoteOffset, NoteLabelForOffset(pipe.NoteOffset));
+            }
         }
 
         // The gap centre is the exact playfield Y the note maps the character to, so a pipe is
