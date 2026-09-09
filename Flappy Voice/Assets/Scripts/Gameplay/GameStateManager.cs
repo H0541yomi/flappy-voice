@@ -7,6 +7,8 @@ namespace FlappyVoice.Gameplay
     {
         [SerializeField] private GameConfig _config;
 
+        private bool _ownsConfig;
+
         public GameState State { get; private set; } = GameState.Attract;
         public GameConfig Config => _config;
         public float RunElapsedSec { get; private set; }
@@ -15,18 +17,37 @@ namespace FlappyVoice.Gameplay
 
         public void Configure(GameConfig config)
         {
-            if (config != null)
-            {
-                _config = config;
-            }
+            if (config == null) return;
+
+            DisposeOwnedConfig();
+            _config = config;
         }
 
         private void Awake()
         {
-            if (_config == null)
-            {
-                _config = GameConfig.CreateDefault();
-            }
+            if (_config != null) return;
+
+            _config = GameConfig.CreateDefault();
+            _ownsConfig = true;
+        }
+
+        private void OnDestroy()
+        {
+            DisposeOwnedConfig();
+        }
+
+        // CreateDefault() returns a live ScriptableObject that nothing else owns; without this it
+        // survives scene unload and leaks one instance per load.
+        private void DisposeOwnedConfig()
+        {
+            if (!_ownsConfig || _config == null) return;
+
+            _ownsConfig = false;
+            GameConfig stale = _config;
+            _config = null;
+
+            if (Application.isPlaying) Destroy(stale);
+            else DestroyImmediate(stale);
         }
 
         private void Update()

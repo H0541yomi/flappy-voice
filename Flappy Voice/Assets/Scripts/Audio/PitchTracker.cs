@@ -10,6 +10,15 @@ namespace FlappyVoice.Audio
 
         [SerializeField] private MicrophoneInput microphoneInput;
 
+        // Detection range is NOT the anchor's vocal-range sanity clamp: clamping detection at 700Hz
+        // makes anything above ~F5 read as unvoiced and freezes the character mid-song.
+        [SerializeField] private float _detectorMinHz = 70f;
+        [SerializeField] private float _detectorMaxHz = 1200f;
+
+        // ~4 frames at 60fps (~67ms): rides out a consonant or breath without paying the 80ms
+        // re-sustain, and without restarting the attract-mode anchor capture window.
+        [SerializeField] private int _dropoutHoldFrames = 4;
+
         private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
 
         private YinPitchDetector _detector;
@@ -19,14 +28,13 @@ namespace FlappyVoice.Audio
         private float _amplitudeGateRms = 0.015f;
         private float _sustainMs = 80f;
         private float _yinThreshold = 0.15f;
-        private float _minHz = 70f;
-        private float _maxHz = 700f;
         private int _detectorSampleRate;
 
         private float _acceptedHz;
         private float _candidateHz;
         private float _candidateHeldMs;
         private bool _hasCandidate;
+        private int _unvoicedFrames;
 
         public PitchSample Current { get; private set; }
         public bool HasVoice => Current.IsVoiced;
@@ -40,8 +48,6 @@ namespace FlappyVoice.Audio
             _amplitudeGateRms = config.AmplitudeGateRms;
             _sustainMs = config.SustainMs;
             _yinThreshold = config.YinThreshold;
-            _minHz = config.VocalRangeClampMinHz;
-            _maxHz = config.VocalRangeClampMaxHz;
 
             if (_buffer == null || _buffer.Length != _pitchBufferSize) _buffer = new float[_pitchBufferSize];
             _detector = null;
@@ -69,15 +75,14 @@ namespace FlappyVoice.Audio
             int count = microphoneInput.ReadLatest(_buffer);
             if (count <= 0)
             {
-                Emit(0f, 0f, 0f, false);
+                HandleUnvoicedFrame(0f);
                 return;
             }
 
             float rms = YinPitchDetector.ComputeRms(_buffer, 0, count);
             if (rms < _amplitudeGateRms)
             {
-                ResetTracking();
-                Emit(0f, rms, 0f, false);
+                HandleUnvoicedFrame(rms);
                 return;
             }
 
@@ -85,11 +90,11 @@ namespace FlappyVoice.Audio
             float hz = _detector.Detect(_buffer, 0, count, out confidence);
             if (hz <= 0f)
             {
-                ResetTracking();
-                Emit(0f, rms, 0f, false);
+                HandleUnvoicedFrame(rms);
                 return;
             }
 
+            _unvoicedFrames = 0;
             float midi = PitchMath.HzToMidi(hz);
 
             if (_acceptedHz > 0f && Mathf.Abs(midi - PitchMath.HzToMidi(_acceptedHz)) <= NoteChangeToleranceSemitones)
@@ -132,7 +137,20 @@ namespace FlappyVoice.Audio
             if (_detector != null && _detectorSampleRate == sampleRate) return;
 
             _detectorSampleRate = sampleRate;
-            _detector = new YinPitchDetector(_pitchBufferSize, sampleRate, _minHz, _maxHz, _yinThreshold);
+            _detector = new YinPitchDetector(_pitchBufferSize, sampleRate, _detectorMinHz, _detectorMaxHz, _yinThreshold);
+        }
+
+        private void HandleUnvoicedFrame(float rms)
+        {
+            if (_acceptedHz > 0f && _unvoicedFrames < _dropoutHoldFrames)
+            {
+                _unvoicedFrames++;
+                Emit(_acceptedHz, rms, 0f, true);
+                return;
+            }
+
+            ResetTracking();
+            Emit(0f, rms, 0f, false);
         }
 
         private void ResetTracking()
@@ -141,6 +159,7 @@ namespace FlappyVoice.Audio
             _candidateHz = 0f;
             _candidateHeldMs = 0f;
             _hasCandidate = false;
+            _unvoicedFrames = 0;
         }
 
         private void Emit(float hz, float amplitude, float confidence, bool isVoiced)

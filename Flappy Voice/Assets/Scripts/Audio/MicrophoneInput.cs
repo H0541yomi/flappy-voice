@@ -77,9 +77,6 @@ namespace FlappyVoice.Audio
 
             _deviceName = target;
             _started = true;
-
-            int clipSamples = _clip.samples;
-            if (_scratch == null || _scratch.Length != clipSamples) _scratch = new float[clipSamples];
             return true;
         }
 
@@ -99,25 +96,49 @@ namespace FlappyVoice.Audio
 
             int clipSamples = _clip.samples;
             if (clipSamples <= 0) return 0;
-            if (_scratch == null || _scratch.Length != clipSamples) _scratch = new float[clipSamples];
 
             int position = Microphone.GetPosition(_deviceName);
             if (position < 0) return 0;
             if (position > clipSamples) position = clipSamples;
 
             int count = destination.Length < clipSamples ? destination.Length : clipSamples;
-            _clip.GetData(_scratch, 0);
 
-            // The newest `count` samples end at `position` and may straddle the loop point.
+            // GetData always fills the whole array it is handed, so every read is exactly `count`
+            // samples wide; the newest `count` samples end at `position` and straddle the loop
+            // point whenever position < count.
             int start = position - count;
-            if (start < 0) start += clipSamples;
 
-            int firstRun = clipSamples - start;
-            if (firstRun > count) firstRun = count;
-            Array.Copy(_scratch, start, destination, 0, firstRun);
-            if (firstRun < count) Array.Copy(_scratch, 0, destination, firstRun, count - firstRun);
+            if (start >= 0)
+            {
+                if (destination.Length == count)
+                {
+                    _clip.GetData(destination, start);
+                    return count;
+                }
+
+                EnsureScratch(count);
+                _clip.GetData(_scratch, start);
+                Array.Copy(_scratch, 0, destination, 0, count);
+                return count;
+            }
+
+            EnsureScratch(count);
+
+            int head = position;         // samples already written after the loop point: clip [0, head)
+            int tail = count - head;     // older samples still at the very end: clip [clipSamples-tail, clipSamples)
+
+            _clip.GetData(_scratch, 0);
+            Array.Copy(_scratch, 0, destination, tail, head);
+
+            _clip.GetData(_scratch, clipSamples - count);
+            Array.Copy(_scratch, count - tail, destination, 0, tail);
 
             return count;
+        }
+
+        private void EnsureScratch(int count)
+        {
+            if (_scratch == null || _scratch.Length != count) _scratch = new float[count];
         }
 
         private static int ResolveSampleRate(string device)
