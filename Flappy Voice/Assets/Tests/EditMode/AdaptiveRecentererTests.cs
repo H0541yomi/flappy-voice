@@ -59,6 +59,18 @@ namespace FlappyVoice.Tests
             Assert.That(recenterer.IsHuggingEdge, Is.True);
         }
 
+        // AdaptiveRecenterer is still built around a wrapping octave and is still not wired into
+        // gameplay. PitchMath no longer ships a wrap - the game clamps - so the wrap these tests
+        // exercise lives here, with the only component that still assumes it.
+        private static float WrapHeight(float midi, float floor, int width)
+        {
+            if (width <= 0) return 0f;
+            float rel = (midi - floor) % width;
+            if (rel < 0f) rel += width;
+            float height = rel / width;
+            return height >= 0f && height < 1f ? height : 0f;
+        }
+
         [TestCase(0.98f)]
         [TestCase(0.02f)]
         public void HuggingSeam_DriftsFloorAndPushesMeanTowardCentre(float startHeight)
@@ -72,7 +84,7 @@ namespace FlappyVoice.Tests
 
             for (int i = 0; i < (int)(30f / Dt); i++)
             {
-                float height = PitchMath.WrapToOctaveHeight(midi, floor, Width);
+                float height = WrapHeight(midi, floor, Width);
                 float next = recenterer.Update(height, floor, Dt);
 
                 float change = Math.Abs(next - floor);
@@ -83,7 +95,7 @@ namespace FlappyVoice.Tests
             Assert.That(floor, Is.Not.EqualTo(48f), "floor should have drifted");
             Assert.That(maxPerFrameChange, Is.LessThanOrEqualTo(DriftRate * Dt + 1e-5f));
 
-            float finalHeight = PitchMath.WrapToOctaveHeight(midi, floor, Width);
+            float finalHeight = WrapHeight(midi, floor, Width);
             Assert.That(SeamDistance(finalHeight), Is.GreaterThan(EdgeThreshold));
             Assert.That(Math.Abs(recenterer.CircularMeanHeight - 0.5f), Is.LessThan(initialDistanceFromCentre));
             Assert.That(recenterer.IsHuggingEdge, Is.False);

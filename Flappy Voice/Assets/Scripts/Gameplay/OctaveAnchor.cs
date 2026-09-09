@@ -2,10 +2,16 @@ using System;
 
 namespace FlappyVoice.Gameplay
 {
+    // Anchors the playable range around the first note the player sings. The note is rounded to the
+    // nearest semitone and becomes the CENTRE of the screen; the range then runs half a span below
+    // and half a span above it. Notes outside that span clamp to the floor/ceiling - there is no
+    // wrap. Anchoring on the sung note rather than on a fixed letter is what makes the range
+    // reachable no matter which note the player happens to start on.
     public sealed class OctaveAnchor
     {
         private float _captureWindowSec = 0.35f;
         private float _toleranceSemitones = 1.5f;
+        private int _rangeWidthSemitones = 12;
         private float _minMidi;
         private float _maxMidi;
 
@@ -16,6 +22,8 @@ namespace FlappyVoice.Gameplay
 
         public bool IsAnchored { get; private set; }
         public float FloorMidi { get; private set; }
+        public float CenterMidi { get; private set; }
+        public float CeilingMidi => FloorMidi + _rangeWidthSemitones;
 
         public OctaveAnchor()
         {
@@ -23,10 +31,12 @@ namespace FlappyVoice.Gameplay
             _maxMidi = PitchMath.HzToMidi(700f);
         }
 
-        public void Configure(float captureWindowSec, float stabilityToleranceSemitones, float clampMinHz, float clampMaxHz)
+        public void Configure(float captureWindowSec, float stabilityToleranceSemitones, float clampMinHz,
+            float clampMaxHz, int rangeWidthSemitones)
         {
             _captureWindowSec = captureWindowSec > 0f ? captureWindowSec : 0f;
             _toleranceSemitones = stabilityToleranceSemitones > 0f ? stabilityToleranceSemitones : 0f;
+            _rangeWidthSemitones = rangeWidthSemitones > 0 ? rangeWidthSemitones : 12;
 
             float lo = PitchMath.HzToMidi(clampMinHz);
             float hi = PitchMath.HzToMidi(clampMaxHz);
@@ -74,17 +84,18 @@ namespace FlappyVoice.Gameplay
 
             if (_accumulatedSec < _captureWindowSec) return false;
 
-            SetFloorMidi(_candidateMidi);
+            SetCenterMidi(_candidateMidi);
             ClearProgress();
             return true;
         }
 
-        public void SetFloorMidi(float midi)
+        // The centre is clamped into the plausible vocal range BEFORE rounding, so a cough or a thump
+        // cannot anchor the range an octave away from anything the player can actually sing.
+        public void SetCenterMidi(float midi)
         {
-            // Round up by a half semitone first: a first note detected a few cents flat of an A is
-            // still that A, and snapping strictly downward would drop the floor a whole octave and
-            // pin the singer's entire range to the top of the screen.
-            FloorMidi = ClampAToVocalRange(PitchMath.NearestAFloorAtOrBelow(midi + 0.5f));
+            float clamped = midi < _minMidi ? _minMidi : (midi > _maxMidi ? _maxMidi : midi);
+            CenterMidi = PitchMath.RoundToSemitone(clamped);
+            FloorMidi = CenterMidi - PitchMath.SemitonesBelowCenter(_rangeWidthSemitones);
             IsAnchored = true;
         }
 
@@ -92,24 +103,8 @@ namespace FlappyVoice.Gameplay
         {
             IsAnchored = false;
             FloorMidi = 0f;
+            CenterMidi = 0f;
             ClearProgress();
-        }
-
-        // A cough or a thump must not become the anchor, but the floor also has to stay exactly on an
-        // A or every pipe's note letter is wrong. So the vocal-range clamp may only move the floor by
-        // WHOLE octaves, never by an arbitrary amount.
-        private float ClampAToVocalRange(float aMidi)
-        {
-            const float octave = 12f;
-            if (aMidi < _minMidi)
-            {
-                aMidi += octave * (float)Math.Ceiling((_minMidi - aMidi) / octave);
-            }
-            if (aMidi > _maxMidi)
-            {
-                aMidi -= octave * (float)Math.Ceiling((aMidi - _maxMidi) / octave);
-            }
-            return aMidi;
         }
 
         private void StartCandidate(float midi)

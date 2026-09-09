@@ -5,6 +5,7 @@ namespace FlappyVoice.Gameplay
     public sealed class Pipe : MonoBehaviour
     {
         private const float BoundsOvershoot = 3f;
+        private const float NoteChipWidth = 1.5f;
 
         [SerializeField] private Transform _topSection;
         [SerializeField] private Transform _bottomSection;
@@ -23,6 +24,10 @@ namespace FlappyVoice.Gameplay
         public bool HasScored { get; set; }
         public int NoteOffset { get; private set; }
         public float X => transform.position.x;
+
+        // Widest thing the pipe draws, note chip included, so the spawner can push spawn/despawn far
+        // enough past the camera edge that nothing ever pops in or out on screen.
+        public float VisualWidth => Mathf.Max(_width, NoteChipWidth);
 
         private void Awake()
         {
