@@ -42,9 +42,8 @@ namespace FlappyVoice.Gameplay
             }
         }
 
-        // Voice is present but the octave floor is not captured yet: drift off any screen edge so
-        // the floor cannot be anchored onto the height 0/1 wrap seam, where vibrato would flip the
-        // character top-to-bottom every half cycle.
+        // Voice is present but the octave floor is not captured yet: ease toward mid-screen so the
+        // jump when the floor snaps to an A is as small as possible.
         public void SetHandoffCentering(bool centering)
         {
             _centeringForHandoff = centering;

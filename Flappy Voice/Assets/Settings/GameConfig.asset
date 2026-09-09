@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GameConfig
   m_EditorClassIdentifier: FlappyVoice::FlappyVoice.Config.GameConfig
   _pipeGapSize: 3.2
-  _minPipeGapSize: 2.1
+  _minPipeGapSize: 2.6
   _pipeSpeed: 3
   _maxPipeSpeed: 5.5
   _spawnIntervalSec: 2
@@ -50,7 +50,7 @@ MonoBehaviour:
   _octaveWidthSemitones: 12
   _anchorCaptureWindowMs: 350
   _anchorStabilityToleranceSemitones: 1.5
-  _vocalRangeClampMinHz: 70
+  _vocalRangeClampMinHz: 55
   _vocalRangeClampMaxHz: 700
   _recenterWindowSec: 4
   _recenterDriftRatePerSec: 0.35
@@ -61,3 +61,5 @@ MonoBehaviour:
   _yinThreshold: 0.15
   _heightSmoothTimeSec: 0.06
   _maxVerticalSpeed: 9
+  _flapAmplitudeUnits: 0.16
+  _flapCyclesPerSec: 2.5

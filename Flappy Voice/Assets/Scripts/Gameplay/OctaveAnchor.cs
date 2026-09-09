@@ -81,9 +81,10 @@ namespace FlappyVoice.Gameplay
 
         public void SetFloorMidi(float midi)
         {
-            if (midi < _minMidi) midi = _minMidi;
-            else if (midi > _maxMidi) midi = _maxMidi;
-            FloorMidi = midi;
+            // Round up by a half semitone first: a first note detected a few cents flat of an A is
+            // still that A, and snapping strictly downward would drop the floor a whole octave and
+            // pin the singer's entire range to the top of the screen.
+            FloorMidi = ClampAToVocalRange(PitchMath.NearestAFloorAtOrBelow(midi + 0.5f));
             IsAnchored = true;
         }
 
@@ -92,6 +93,23 @@ namespace FlappyVoice.Gameplay
             IsAnchored = false;
             FloorMidi = 0f;
             ClearProgress();
+        }
+
+        // A cough or a thump must not become the anchor, but the floor also has to stay exactly on an
+        // A or every pipe's note letter is wrong. So the vocal-range clamp may only move the floor by
+        // WHOLE octaves, never by an arbitrary amount.
+        private float ClampAToVocalRange(float aMidi)
+        {
+            const float octave = 12f;
+            if (aMidi < _minMidi)
+            {
+                aMidi += octave * (float)Math.Ceiling((_minMidi - aMidi) / octave);
+            }
+            if (aMidi > _maxMidi)
+            {
+                aMidi -= octave * (float)Math.Ceiling((aMidi - _maxMidi) / octave);
+            }
+            return aMidi;
         }
 
         private void StartCandidate(float midi)

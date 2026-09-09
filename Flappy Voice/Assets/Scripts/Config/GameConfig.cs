@@ -7,7 +7,7 @@ namespace FlappyVoice.Config
     {
         [Header("Pipes")]
         [SerializeField] private float _pipeGapSize = 3.2f;
-        [SerializeField] private float _minPipeGapSize = 2.1f;
+        [SerializeField] private float _minPipeGapSize = 2.6f;
         [SerializeField] private float _pipeSpeed = 3f;
         [SerializeField] private float _maxPipeSpeed = 5.5f;
         [SerializeField] private float _spawnIntervalSec = 2f;
@@ -23,7 +23,7 @@ namespace FlappyVoice.Config
         [SerializeField] private int _octaveWidthSemitones = 12;
         [SerializeField] private int _anchorCaptureWindowMs = 350;
         [SerializeField] private float _anchorStabilityToleranceSemitones = 1.5f;
-        [SerializeField] private float _vocalRangeClampMinHz = 70f;
+        [SerializeField] private float _vocalRangeClampMinHz = 55f;
         [SerializeField] private float _vocalRangeClampMaxHz = 700f;
         [SerializeField] private float _recenterWindowSec = 4f;
         [SerializeField] private float _recenterDriftRatePerSec = 0.35f;
@@ -38,6 +38,10 @@ namespace FlappyVoice.Config
         [Header("Movement")]
         [SerializeField] private float _heightSmoothTimeSec = 0.06f;
         [SerializeField] private float _maxVerticalSpeed = 9f;
+
+        [Header("Flap")]
+        [SerializeField] private float _flapAmplitudeUnits = 0.16f;
+        [SerializeField] private float _flapCyclesPerSec = 2.5f;
 
         public float PipeGapSize => _pipeGapSize;
         public float MinPipeGapSize => _minPipeGapSize;
@@ -68,13 +72,15 @@ namespace FlappyVoice.Config
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
+        public float FlapAmplitudeUnits => _flapAmplitudeUnits;
+        public float FlapCyclesPerSec => _flapCyclesPerSec;
 
         public static GameConfig CreateDefault()
         {
             GameConfig c = CreateInstance<GameConfig>();
 
             c._pipeGapSize = 3.2f;
-            c._minPipeGapSize = 2.1f;
+            c._minPipeGapSize = 2.6f;
             c._pipeSpeed = 3f;
             c._maxPipeSpeed = 5.5f;
             c._spawnIntervalSec = 2f;
@@ -89,7 +95,7 @@ namespace FlappyVoice.Config
             c._octaveWidthSemitones = 12;
             c._anchorCaptureWindowMs = 350;
             c._anchorStabilityToleranceSemitones = 1.5f;
-            c._vocalRangeClampMinHz = 70f;
+            c._vocalRangeClampMinHz = 55f;
             c._vocalRangeClampMaxHz = 700f;
             c._recenterWindowSec = 4f;
             c._recenterDriftRatePerSec = 0.35f;
@@ -102,6 +108,8 @@ namespace FlappyVoice.Config
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
+            c._flapAmplitudeUnits = 0.16f;
+            c._flapCyclesPerSec = 2.5f;
 
             c.name = "GameConfig (Default)";
             return c;

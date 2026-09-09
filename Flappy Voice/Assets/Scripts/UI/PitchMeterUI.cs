@@ -6,6 +6,11 @@ using UnityEngine.UI;
 
 namespace FlappyVoice.UI
 {
+    // TODO: temporarily disabled, not dead code. SceneBuilder leaves the scene object present but
+    // inactive ("PitchMeter (DISABLED TODO)") because the 12-segment bar was drawn for the old
+    // wrapping octave; it needs a redesign for the clamped A-to-A range (offset 0 = bottom,
+    // offset 12 = top, out-of-range pins instead of wrapping) before it goes back into play.
+    // The wrap seam it used to flash no longer exists, so that affordance is gone from here too.
     public sealed class PitchMeterUI : MonoBehaviour
     {
         [SerializeField] private VoiceHeightSource voiceSource;
@@ -13,14 +18,10 @@ namespace FlappyVoice.UI
 
         [SerializeField] private RectTransform indicator;
         [SerializeField] private Image indicatorGraphic;
-        [SerializeField] private Image wrapFlashTop;
-        [SerializeField] private Image wrapFlashBottom;
         [SerializeField] private CanvasGroup bandGroup;
         [SerializeField] private TextMeshProUGUI noteLabel;
         [SerializeField] private TextMeshProUGUI statusLabel;
 
-        [SerializeField] private float wrapFlashSec = 0.45f;
-        [SerializeField] private float wrapDetectMargin = 0.3f;
         [SerializeField] private float unvoicedAlpha = 0.25f;
 
         private static readonly string[] NoteNames =
@@ -29,11 +30,7 @@ namespace FlappyVoice.UI
         };
 
         private const string ListeningText = "sing to set your low note";
-        private const string WrapText = "top of octave wraps to bottom";
 
-        private float previousHeight = -1f;
-        private float flashTop;
-        private float flashBottom;
         private int renderedNoteKey = int.MinValue;
         private int renderedStatus = -1;
         private bool renderedVoiced = true;
@@ -48,16 +45,12 @@ namespace FlappyVoice.UI
         {
             voiceSource = voice;
             pitchTracker = tracker;
-            previousHeight = -1f;
             renderedNoteKey = int.MinValue;
             renderedStatus = -1;
         }
 
         private void OnEnable()
         {
-            previousHeight = -1f;
-            flashTop = 0f;
-            flashBottom = 0f;
             renderedNoteKey = int.MinValue;
             renderedStatus = -1;
             renderedVoiced = true;
@@ -65,23 +58,9 @@ namespace FlappyVoice.UI
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;
             bool anchored = voiceSource != null && voiceSource.IsAnchored;
             bool voiced = pitchTracker != null && pitchTracker.HasVoice;
             float height = voiceSource != null ? Mathf.Clamp01(voiceSource.TargetHeight01) : 0.5f;
-
-            if (previousHeight >= 0f && voiced && anchored)
-            {
-                if (previousHeight > 1f - wrapDetectMargin && height < wrapDetectMargin)
-                {
-                    flashBottom = 1f;
-                }
-                else if (previousHeight < wrapDetectMargin && height > 1f - wrapDetectMargin)
-                {
-                    flashTop = 1f;
-                }
-            }
-            previousHeight = height;
 
             if (indicator != null)
             {
@@ -103,25 +82,8 @@ namespace FlappyVoice.UI
                 }
             }
 
-            float decay = wrapFlashSec > Mathf.Epsilon ? dt / wrapFlashSec : 1f;
-            flashTop = Mathf.Max(0f, flashTop - decay);
-            flashBottom = Mathf.Max(0f, flashBottom - decay);
-            ApplyFlash(wrapFlashTop, flashTop);
-            ApplyFlash(wrapFlashBottom, flashBottom);
-
             RenderNote(voiced ? pitchTracker.Current.FrequencyHz : 0f);
-            RenderStatus(anchored, flashTop > 0f || flashBottom > 0f);
-        }
-
-        private static void ApplyFlash(Image target, float amount)
-        {
-            if (target == null)
-            {
-                return;
-            }
-            Color c = target.color;
-            c.a = amount;
-            target.color = c;
+            RenderStatus(anchored);
         }
 
         private void RenderNote(float hz)
@@ -150,30 +112,19 @@ namespace FlappyVoice.UI
             noteLabel.SetText($"{NoteNames[index]}{(midi / 12) - 1}");
         }
 
-        private void RenderStatus(bool anchored, bool wrapping)
+        private void RenderStatus(bool anchored)
         {
             if (statusLabel == null)
             {
                 return;
             }
-            int status = !anchored ? 0 : wrapping ? 1 : 2;
+            int status = anchored ? 1 : 0;
             if (status == renderedStatus)
             {
                 return;
             }
             renderedStatus = status;
-            switch (status)
-            {
-                case 0:
-                    statusLabel.SetText(ListeningText);
-                    break;
-                case 1:
-                    statusLabel.SetText(WrapText);
-                    break;
-                default:
-                    statusLabel.SetText(string.Empty);
-                    break;
-            }
+            statusLabel.SetText(anchored ? string.Empty : ListeningText);
         }
     }
 }

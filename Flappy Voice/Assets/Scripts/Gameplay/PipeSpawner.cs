@@ -8,7 +8,7 @@ namespace FlappyVoice.Gameplay
     {
         [SerializeField] private Pipe _pipePrefab;
         [SerializeField] private int _poolSize = 8;
-        [SerializeField] private float _gapEdgeMargin = 0.4f;
+        [SerializeField] private int _maxNoteStepSemitones = 7;
         [SerializeField] private float _reachSafetyFactor = 0.55f;
 
         private readonly Queue<Pipe> _pool = new Queue<Pipe>();
@@ -18,7 +18,7 @@ namespace FlappyVoice.Gameplay
         private GameStateManager _state;
         private float _spawnTimer;
         private float _currentInterval;
-        private float _lastGapCenterY;
+        private int _lastNoteOffset = -1;
 
         public float CurrentSpeed { get; private set; }
         public float CurrentGapSize { get; private set; }
@@ -71,7 +71,7 @@ namespace FlappyVoice.Gameplay
             CurrentSpeed = _config.PipeSpeed;
             CurrentGapSize = _config.PipeGapSize;
             _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSec);
-            _lastGapCenterY = (_config.PlayfieldMinY + _config.PlayfieldMaxY) * 0.5f;
+            _lastNoteOffset = -1;
 
             // first pipe appears immediately so attract mode always has a gap to fly toward
             _spawnTimer = _currentInterval;
@@ -154,40 +154,78 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
-            float gapCenterY = PickGapCenterY();
+            int noteOffset = PickNoteOffset();
+            float gapCenterY = GapCenterYForOffset(noteOffset);
 
             pipe.transform.position = new Vector3(_config.PipeSpawnXOffset, 0f, 0f);
             pipe.gameObject.SetActive(true);
             pipe.Setup(gapCenterY, CurrentGapSize, _config.PlayfieldMinY, _config.PlayfieldMaxY);
+            pipe.SetNote(noteOffset, PitchMath.NoteNameForOffset(noteOffset));
 
             _active.Add(pipe);
-            _lastGapCenterY = gapCenterY;
+            _lastNoteOffset = noteOffset;
         }
 
-        private float PickGapCenterY()
+        // The gap centre is the exact playfield Y the note maps the character to, so a pipe is
+        // threaded by singing its letter and the gap size alone supplies the margin for error.
+        private float GapCenterYForOffset(int noteOffset)
         {
-            float halfGap = CurrentGapSize * 0.5f;
-            float min = _config.PlayfieldMinY + halfGap + _gapEdgeMargin;
-            float max = _config.PlayfieldMaxY - halfGap - _gapEdgeMargin;
+            float height = PitchMath.HeightForOffset(noteOffset, _config.OctaveWidthSemitones);
+            return Mathf.Lerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, height);
+        }
 
-            if (min > max)
+        private int PickNoteOffset()
+        {
+            int count = Mathf.Max(1, _config.OctaveWidthSemitones + 1);
+
+            if (count < 2)
             {
-                float mid = (_config.PlayfieldMinY + _config.PlayfieldMaxY) * 0.5f;
-                return mid;
+                return 0;
             }
 
-            // a gap the character cannot physically reach from the previous one is an unwinnable
-            // sequence for both the attract pilot and a real singer, so cap the vertical step
-            float reach = _config.MaxVerticalSpeed * _currentInterval * _reachSafetyFactor;
-            float lo = Mathf.Max(min, _lastGapCenterY - reach);
-            float hi = Mathf.Min(max, _lastGapCenterY + reach);
-
-            if (lo > hi)
+            if (_lastNoteOffset < 0 || _lastNoteOffset >= count)
             {
-                return Mathf.Clamp(_lastGapCenterY, min, max);
+                return Random.Range(0, count);
             }
 
-            return Random.Range(lo, hi);
+            int step = MaxStepSemitones(count);
+            int lo = Mathf.Max(0, _lastNoteOffset - step);
+            int hi = Mathf.Min(count - 1, _lastNoteOffset + step);
+            int candidates = hi - lo;
+
+            if (candidates < 1)
+            {
+                lo = 0;
+                candidates = count - 1;
+            }
+
+            // draw over the window minus the previous offset, then shift past it: uniform, no
+            // allocation, and a repeat is unrepresentable rather than merely unlikely
+            int pick = lo + Random.Range(0, candidates);
+            if (pick >= _lastNoteOffset)
+            {
+                pick++;
+            }
+
+            return pick;
+        }
+
+        private int MaxStepSemitones(int count)
+        {
+            int cap = Mathf.Clamp(_maxNoteStepSemitones, 1, count - 1);
+
+            float span = _config.PlayfieldMaxY - _config.PlayfieldMinY;
+            int width = Mathf.Max(1, _config.OctaveWidthSemitones);
+            float unitsPerSemitone = span / width;
+
+            if (unitsPerSemitone <= 0f)
+            {
+                return cap;
+            }
+
+            float reachUnits = _config.MaxVerticalSpeed * _currentInterval * _reachSafetyFactor;
+            int reachSemitones = Mathf.Max(1, Mathf.FloorToInt(reachUnits / unitsPerSemitone));
+            return Mathf.Min(cap, reachSemitones);
         }
 
         private void HandleStateChanged(GameState state)
