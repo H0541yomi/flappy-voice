@@ -19,6 +19,12 @@ namespace FlappyVoice.UI
         [SerializeField] private RectTransform micGateMarker;
         [SerializeField] private TextMeshProUGUI micHintLabel;
 
+        [SerializeField] private CanvasGroup singToStartGroup;
+        [SerializeField] private RectTransform singToStartPulseTarget;
+        [SerializeField] private float singToStartPulseHz = 0.6f;
+        [SerializeField] private float singToStartMinAlpha = 0.62f;
+        [SerializeField] private float singToStartScaleAmplitude = 0.045f;
+
         [SerializeField] private float meterFullScaleRms = 0.2f;
         [SerializeField] private float meterRisePerSec = 6f;
         [SerializeField] private float meterFallPerSec = 2f;
@@ -33,6 +39,7 @@ namespace FlappyVoice.UI
         private int renderedScore = int.MinValue;
         private int renderedAudible = -1;
         private bool subscribed;
+        private bool singToStartVisible;
 
         public void Configure(ScoreManager score, PitchTracker tracker, GameStateManager state)
         {
@@ -150,6 +157,25 @@ namespace FlappyVoice.UI
                     micHintLabel.enabled = audible == 0;
                 }
             }
+
+            PulseSingToStart();
+        }
+
+        private void PulseSingToStart()
+        {
+            if (!singToStartVisible || singToStartGroup == null)
+            {
+                return;
+            }
+
+            float phase = Mathf.Sin(Time.unscaledTime * singToStartPulseHz * (Mathf.PI * 2f));
+            float t = (phase + 1f) * 0.5f;
+            singToStartGroup.alpha = Mathf.Lerp(singToStartMinAlpha, 1f, t);
+            if (singToStartPulseTarget != null)
+            {
+                float scale = 1f + (singToStartScaleAmplitude * phase);
+                singToStartPulseTarget.localScale = new Vector3(scale, scale, 1f);
+            }
         }
 
         private void OnScoreChanged(int value)
@@ -180,6 +206,17 @@ namespace FlappyVoice.UI
             if (meterGroup != null)
             {
                 meterGroup.alpha = showMeter ? 1f : 0f;
+            }
+
+            singToStartVisible = state == GameState.Attract;
+            if (singToStartGroup != null)
+            {
+                singToStartGroup.gameObject.SetActive(singToStartVisible);
+                singToStartGroup.alpha = singToStartVisible ? 1f : 0f;
+            }
+            if (singToStartPulseTarget != null && !singToStartVisible)
+            {
+                singToStartPulseTarget.localScale = Vector3.one;
             }
         }
 
