@@ -26,6 +26,7 @@ namespace FlappyVoice.Editor
         private const string PrefabsFolder = "Assets/Prefabs";
         private const string PipePrefabPath = "Assets/Prefabs/Pipe.prefab";
         private const string ArtFolder = "Assets/Art/Placeholder";
+        private const string AudioFolder = "Assets/Audio";
         private const string BirdSpritePath = "Assets/Art/Placeholder/Bird.png";
         private const string PipeSpritePath = "Assets/Art/Placeholder/PipeSection.png";
         private const int PixelsPerUnit = 64;
@@ -55,6 +56,7 @@ namespace FlappyVoice.Editor
             EnsureFolder(SettingsFolder);
             EnsureFolder(PrefabsFolder);
             EnsureFolder(ArtFolder);
+            EnsureFolder(AudioFolder);
 
             GameConfig config = EnsureConfig();
             Sprite birdSprite = EnsureBirdSprite();
@@ -76,6 +78,7 @@ namespace FlappyVoice.Editor
             GameObject audioGo = new GameObject("Audio");
             MicrophoneInput microphoneInput = audioGo.AddComponent<MicrophoneInput>();
             PitchTracker pitchTracker = audioGo.AddComponent<PitchTracker>();
+            GameAudio gameAudio = BuildGameAudio(audioGo.transform);
 
             GameObject heightGo = new GameObject("HeightSources");
             VoiceHeightSource voiceHeight = heightGo.AddComponent<VoiceHeightSource>();
@@ -101,7 +104,7 @@ namespace FlappyVoice.Editor
 
             UnityEngine.Object[] candidates =
             {
-                config, stateManager, scoreManager, shareService, microphoneInput, pitchTracker,
+                config, stateManager, scoreManager, shareService, microphoneInput, pitchTracker, gameAudio,
                 voiceHeight, attractPilot, pipeSpawner, player, camera, hud, tunerBar, endScreen,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
@@ -111,6 +114,7 @@ namespace FlappyVoice.Editor
             AutoWireByType(shareService, candidates);
             AutoWireByType(microphoneInput, candidates);
             AutoWireByType(pitchTracker, candidates);
+            AutoWireByType(gameAudio, candidates);
             AutoWireByType(voiceHeight, candidates);
             AutoWireByType(attractPilot, candidates);
             AutoWireByType(pipeSpawner, candidates);
@@ -133,7 +137,7 @@ namespace FlappyVoice.Editor
             GameObject bootstrapGo = new GameObject("GameBootstrap");
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
-                pitchTracker, voiceHeight, attractPilot, pipeSpawner, player, camera, hud,
+                pitchTracker, gameAudio, voiceHeight, attractPilot, pipeSpawner, player, camera, hud,
                 tunerBar, endScreen);
             EditorUtility.SetDirty(bootstrap);
 
@@ -360,6 +364,54 @@ namespace FlappyVoice.Editor
             SetRef(so, "singToStartPulseTarget", (RectTransform)singPlate.transform);
             so.ApplyModifiedPropertiesWithoutUndo();
             return hud;
+        }
+
+        // Two sources, not one: the music bed is a looping stream whose position must survive the
+        // attract -> playing handoff, and the one-shots have to be able to overlap it and each
+        // other. Clips are looked up by path rather than passed in, so adding a real file over a
+        // placeholder needs no change here.
+        private static GameAudio BuildGameAudio(Transform parent)
+        {
+            GameObject root = new GameObject("GameAudio");
+            root.transform.SetParent(parent, false);
+            GameAudio audio = root.AddComponent<GameAudio>();
+
+            AudioSource music = NewAudioSource("Music", root.transform);
+            music.loop = true;
+            AudioSource sfx = NewAudioSource("Sfx", root.transform);
+
+            SerializedObject so = new SerializedObject(audio);
+            SetRef(so, "musicSource", music);
+            SetRef(so, "sfxSource", sfx);
+            SetRef(so, "gameMusic", LoadClip("bgm_game.wav"));
+            SetRef(so, "gameOverMusic", LoadClip("bgm_gameover.wav"));
+            SetRef(so, "scoreSfx", LoadClip("sfx_score.wav"));
+            SetRef(so, "crashSfx", LoadClip("sfx_crash.wav"));
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return audio;
+        }
+
+        private static AudioSource NewAudioSource(string name, Transform parent)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            AudioSource source = go.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            // 2D: nothing in this game is positional, and a 3D source at the origin would pan with
+            // the camera as it does not move.
+            source.spatialBlend = 0f;
+            return source;
+        }
+
+        private static AudioClip LoadClip(string fileName)
+        {
+            string path = $"{AudioFolder}/{fileName}";
+            AudioClip clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            if (clip == null)
+            {
+                Debug.LogWarning($"[SceneBuilder] no audio clip at {path}; run Tools/make-placeholder-audio.py");
+            }
+            return clip;
         }
 
         // Pano-style chromatic tuner across the top: the note letters and the ten-cent ruler sit on
@@ -663,7 +715,8 @@ namespace FlappyVoice.Editor
 
         private static void WireBootstrap(GameBootstrap bootstrap, GameConfig config,
             GameStateManager stateManager, ScoreManager scoreManager, ShareService shareService,
-            MicrophoneInput microphoneInput, PitchTracker pitchTracker, VoiceHeightSource voiceHeight,
+            MicrophoneInput microphoneInput, PitchTracker pitchTracker, GameAudio gameAudio,
+            VoiceHeightSource voiceHeight,
             AttractPilot attractPilot, PipeSpawner pipeSpawner,
             PlayerController player, Camera viewCamera, HudUI hud, TunerBarUI tunerBar,
             EndScreenUI endScreen)
@@ -679,6 +732,7 @@ namespace FlappyVoice.Editor
             SetRef(so, "viewCamera", viewCamera);
             SetRef(so, "pitchTracker", pitchTracker);
             SetRef(so, "microphoneInput", microphoneInput);
+            SetRef(so, "gameAudio", gameAudio);
             SetRef(so, "shareService", shareService);
             SetRef(so, "hud", hud);
             SetRef(so, "tunerBar", tunerBar);

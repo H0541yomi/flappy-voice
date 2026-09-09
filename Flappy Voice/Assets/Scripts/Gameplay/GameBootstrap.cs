@@ -30,6 +30,7 @@ namespace FlappyVoice.Gameplay
         [Header("Audio")]
         [SerializeField] private PitchTracker pitchTracker;
         [SerializeField] private MicrophoneInput microphoneInput;
+        [SerializeField] private GameAudio gameAudio;
 
         [Header("UI")]
         [SerializeField] private ShareService shareService;
@@ -81,6 +82,11 @@ namespace FlappyVoice.Gameplay
             if (scoreManager != null)
             {
                 scoreManager.Configure(stateManager);
+            }
+
+            if (gameAudio != null)
+            {
+                gameAudio.Configure(stateManager, scoreManager);
             }
 
             if (player != null)
@@ -165,6 +171,7 @@ namespace FlappyVoice.Gameplay
             Collect(ref missing, player, nameof(player));
             Collect(ref missing, pitchTracker, nameof(pitchTracker));
             Collect(ref missing, microphoneInput, nameof(microphoneInput));
+            Collect(ref missing, gameAudio, nameof(gameAudio));
             Collect(ref missing, shareService, nameof(shareService));
             Collect(ref missing, hud, nameof(hud));
             Collect(ref missing, tunerBar, nameof(tunerBar));
