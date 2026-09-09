@@ -11,15 +11,17 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private int _poolSize = 8;
         [SerializeField] private int _maxNoteStepSemitones = 7;
         [SerializeField] private float _reachSafetyFactor = 0.55f;
+        // Extra room beyond the bird's own radius when clearing pipes at the start of a run.
+        [SerializeField] private float _runStartClearanceUnits = 0.4f;
 
         private readonly Queue<Pipe> _pool = new Queue<Pipe>();
         private readonly List<Pipe> _active = new List<Pipe>();
 
-        private const string UnanchoredNoteLabel = "?";
+        private const float FallbackPlayerRadius = 0.42f;
 
         private GameConfig _config;
         private GameStateManager _state;
-        private VoiceHeightSource _voice;
+        private PlayerController _player;
         private float _spawnTimer;
         private float _currentInterval;
         private int _lastNoteOffset = -1;
@@ -57,23 +59,11 @@ namespace FlappyVoice.Gameplay
             ResetSpawner();
         }
 
-        // Note letters are derived from the anchored floor, which does not exist until the player
-        // has sung. Every pipe already on screen has to be relabelled the moment it does.
-        public void SetVoiceSource(VoiceHeightSource voice)
+        // The bird's X never moves, but its collider does have width: the spawner needs it to know
+        // which pipes are on top of the bird when a run starts.
+        public void SetPlayer(PlayerController player)
         {
-            if (_voice != null)
-            {
-                _voice.OnAnchorChanged -= RelabelActivePipes;
-            }
-
-            _voice = voice;
-
-            if (_voice != null)
-            {
-                _voice.OnAnchorChanged += RelabelActivePipes;
-            }
-
-            RelabelActivePipes();
+            _player = player;
         }
 
         private void OnDestroy()
@@ -81,11 +71,6 @@ namespace FlappyVoice.Gameplay
             if (_state != null)
             {
                 _state.OnStateChanged -= HandleStateChanged;
-            }
-
-            if (_voice != null)
-            {
-                _voice.OnAnchorChanged -= RelabelActivePipes;
             }
         }
 
@@ -102,7 +87,7 @@ namespace FlappyVoice.Gameplay
             }
 
             CurrentSpeed = _config.PipeSpeed;
-            CurrentGapSize = _config.PipeGapSize;
+            CurrentGapSize = _config.PipeGapSizeAtDifficulty(0f);
             _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSec);
             _lastNoteOffset = -1;
 
@@ -112,7 +97,16 @@ namespace FlappyVoice.Gameplay
 
         public bool TryGetNextGapAhead(float x, out float gapCenterY)
         {
+            return TryGetNextGapAhead(x, out gapCenterY, out _);
+        }
+
+        // The gap's size comes back with its centre because the tuner has to know how much room
+        // there actually is: the ramp shrinks the opening as a run goes on, and the band of notes
+        // that clears it shrinks with it.
+        public bool TryGetNextGapAhead(float x, out float gapCenterY, out float gapSize)
+        {
             gapCenterY = 0f;
+            gapSize = 0f;
             float nearest = float.MaxValue;
             bool found = false;
 
@@ -124,6 +118,7 @@ namespace FlappyVoice.Gameplay
                 {
                     nearest = pipeX;
                     gapCenterY = pipe.GapCenterY;
+                    gapSize = pipe.GapSize;
                     found = true;
                 }
             }
@@ -174,7 +169,7 @@ namespace FlappyVoice.Gameplay
             float difficulty = curve != null ? Mathf.Clamp01(curve.Evaluate(t)) : t;
 
             CurrentSpeed = Mathf.Lerp(_config.PipeSpeed, _config.MaxPipeSpeed, difficulty);
-            CurrentGapSize = Mathf.Lerp(_config.PipeGapSize, _config.MinPipeGapSize, difficulty);
+            CurrentGapSize = _config.PipeGapSizeAtDifficulty(difficulty);
             _currentInterval = Mathf.Max(0.05f,
                 Mathf.Lerp(_config.SpawnIntervalSec, _config.MinSpawnIntervalSec, difficulty));
         }
@@ -193,7 +188,7 @@ namespace FlappyVoice.Gameplay
             pipe.transform.position = new Vector3(SpawnX(), 0f, 0f);
             pipe.gameObject.SetActive(true);
             pipe.Setup(gapCenterY, CurrentGapSize, _config.PlayfieldMinY, _config.PlayfieldMaxY);
-            pipe.SetNote(noteOffset, NoteLabelForOffset(noteOffset));
+            pipe.SetNoteOffset(noteOffset);
 
             _active.Add(pipe);
             _lastNoteOffset = noteOffset;
@@ -231,40 +226,24 @@ namespace FlappyVoice.Gameplay
 
         private float EdgeClearance()
         {
-            float half = (_pipePrefab != null ? _pipePrefab.VisualWidth : 1.5f) * 0.5f;
+            float half = (_pipePrefab != null ? _pipePrefab.Width : 1.4f) * 0.5f;
             return half + Mathf.Max(0f, _config.PipeEdgeMarginUnits);
         }
 
-        private string NoteLabelForOffset(int noteOffset)
-        {
-            if (_voice == null || !_voice.IsAnchored)
-            {
-                return UnanchoredNoteLabel;
-            }
-
-            return PitchMath.NoteNameForMidi(PitchMath.RoundToSemitone(_voice.FloorMidi) + noteOffset);
-        }
-
-        private void RelabelActivePipes()
-        {
-            for (int i = 0; i < _active.Count; i++)
-            {
-                Pipe pipe = _active[i];
-                pipe.SetNote(pipe.NoteOffset, NoteLabelForOffset(pipe.NoteOffset));
-            }
-        }
-
-        // The gap centre is the exact playfield Y the note maps the character to, so a pipe is
-        // threaded by singing its letter and the gap size alone supplies the margin for error.
+        // noteOffset is the LOWER note of the pair the gap spans, so the centre lands on the
+        // boundary between that note and the next one up. Either of the two letters on the chip
+        // threads the pipe, and each gets the same margin either side.
         private float GapCenterYForOffset(int noteOffset)
         {
-            float height = PitchMath.HeightForOffset(noteOffset, _config.OctaveWidthSemitones);
+            float height = PitchMath.HeightForNotePair(noteOffset, _config.OctaveWidthSemitones);
             return Mathf.Lerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, height);
         }
 
         private int PickNoteOffset()
         {
-            int count = Mathf.Max(1, _config.OctaveWidthSemitones + 1);
+            // One pair per adjacent note couple: offsets 0..width-1 pair note i with note i+1, and
+            // the topmost note is the upper half of the last pair rather than a pair of its own.
+            int count = Mathf.Max(1, _config.OctaveWidthSemitones);
 
             if (count < 2)
             {
@@ -321,7 +300,51 @@ namespace FlappyVoice.Gameplay
             if (state == GameState.Attract)
             {
                 ResetSpawner();
+                return;
             }
+
+            if (state == GameState.Playing)
+            {
+                ClearPipesOnPlayer();
+            }
+        }
+
+        // Attract mode eases the bird toward mid-screen as soon as it hears a voice, so by the time
+        // the sustained note anchors the range the bird can already be inside the pipe that was on
+        // its way in. That overlap began while death was still switched off, and a collider that is
+        // already overlapping raises no fresh OnCollisionEnter2D - which is how a player could sing
+        // and then sail straight through the first pipe. Recycling whatever the bird is standing in
+        // at the handoff removes the overlap instead of leaving it to be ignored.
+        private void ClearPipesOnPlayer()
+        {
+            float playerX = _player != null ? _player.transform.position.x : 0f;
+            float clearance = PlayerRadius() + Mathf.Max(0f, _runStartClearanceUnits)
+                + (_pipePrefab != null ? _pipePrefab.Width : 1.4f) * 0.5f;
+
+            for (int i = _active.Count - 1; i >= 0; i--)
+            {
+                if (Mathf.Abs(_active[i].X - playerX) <= clearance)
+                {
+                    Recycle(i);
+                }
+            }
+        }
+
+        private float PlayerRadius()
+        {
+            if (_player == null)
+            {
+                return FallbackPlayerRadius;
+            }
+
+            Collider2D collider = _player.GetComponent<Collider2D>();
+            if (collider == null)
+            {
+                return FallbackPlayerRadius;
+            }
+
+            Bounds bounds = collider.bounds;
+            return Mathf.Max(bounds.extents.x, FallbackPlayerRadius);
         }
 
         private void EnsurePool()

@@ -6,8 +6,15 @@ namespace FlappyVoice.Config
     public sealed class GameConfig : ScriptableObject
     {
         [Header("Pipes")]
-        [SerializeField] private float _pipeGapSize = 3.2f;
-        [SerializeField] private float _minPipeGapSize = 2.6f;
+        // A gap is sized in NOTES, not in world units: it spans this many adjacent notes plus the
+        // clearance the bird needs to fit between the walls. Widening the pitch range shrinks a
+        // semitone on screen, so a fixed world-unit gap would silently change how many notes fit.
+        [SerializeField] private int _pipeGapNotes = 2;
+        // Room on top of the note span for the bird's body. Ramped down toward the minimum with
+        // difficulty; both ends stay wide enough for _pipeGapNotes and too narrow for one more.
+        // PipeGapGeometryTests pins that, so retune these two together with it.
+        [SerializeField] private float _pipeGapClearanceUnits = 1.375f;
+        [SerializeField] private float _minPipeGapClearanceUnits = 1.075f;
         [SerializeField] private float _pipeSpeed = 3f;
         [SerializeField] private float _maxPipeSpeed = 5.5f;
         [SerializeField] private float _spawnIntervalSec = 2f;
@@ -23,7 +30,7 @@ namespace FlappyVoice.Config
         [SerializeField] private float _playfieldMaxY = 4.5f;
 
         [Header("Pitch / mapping")]
-        [SerializeField] private int _octaveWidthSemitones = 12;
+        [SerializeField] private int _octaveWidthSemitones = 24;
         [SerializeField] private int _anchorCaptureWindowMs = 350;
         [SerializeField] private float _anchorStabilityToleranceSemitones = 1.5f;
         [SerializeField] private float _vocalRangeClampMinHz = 55f;
@@ -42,16 +49,9 @@ namespace FlappyVoice.Config
         [SerializeField] private float _heightSmoothTimeSec = 0.06f;
         [SerializeField] private float _maxVerticalSpeed = 9f;
 
-        [Header("Flap")]
-        // Full peak-to-peak travel of the bob, not a half-amplitude: it is subtracted from the pipe
-        // gap on both sides, so raising it eats the margin for error on every pipe.
-        [SerializeField] private float _flapAmplitudeUnits = 0.45f;
-        [SerializeField] private float _flapCyclesPerSec = 3.4f;
-        // Share of each stroke spent rising. Below 0.5 = snappier launch than fall.
-        [SerializeField] private float _flapRiseFraction = 0.42f;
-
-        public float PipeGapSize => _pipeGapSize;
-        public float MinPipeGapSize => _minPipeGapSize;
+        public int PipeGapNotes => _pipeGapNotes;
+        public float PipeGapClearanceUnits => _pipeGapClearanceUnits;
+        public float MinPipeGapClearanceUnits => _minPipeGapClearanceUnits;
         public float PipeSpeed => _pipeSpeed;
         public float MaxPipeSpeed => _maxPipeSpeed;
         public float SpawnIntervalSec => _spawnIntervalSec;
@@ -80,16 +80,34 @@ namespace FlappyVoice.Config
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
-        public float FlapAmplitudeUnits => _flapAmplitudeUnits;
-        public float FlapCyclesPerSec => _flapCyclesPerSec;
-        public float FlapRiseFraction => _flapRiseFraction;
+
+        public float UnitsPerSemitone
+        {
+            get
+            {
+                float span = _playfieldMaxY - _playfieldMinY;
+                if (span <= 0f) return 0f;
+                return span / Mathf.Max(1, _octaveWidthSemitones);
+            }
+        }
+
+        // Single source of truth for gap height, shared by the spawner at runtime and by the pipe
+        // prefab builder at edit time. difficulty01 0 = start of a run, 1 = fully ramped.
+        public float PipeGapSizeAtDifficulty(float difficulty01)
+        {
+            float noteSpan = Mathf.Max(0, _pipeGapNotes - 1) * UnitsPerSemitone;
+            float clearance = Mathf.Lerp(_pipeGapClearanceUnits, _minPipeGapClearanceUnits,
+                Mathf.Clamp01(difficulty01));
+            return Mathf.Max(0.1f, noteSpan + clearance);
+        }
 
         public static GameConfig CreateDefault()
         {
             GameConfig c = CreateInstance<GameConfig>();
 
-            c._pipeGapSize = 3.2f;
-            c._minPipeGapSize = 2.6f;
+            c._pipeGapNotes = 2;
+            c._pipeGapClearanceUnits = 1.375f;
+            c._minPipeGapClearanceUnits = 1.075f;
             c._pipeSpeed = 3f;
             c._maxPipeSpeed = 5.5f;
             c._spawnIntervalSec = 2f;
@@ -102,7 +120,7 @@ namespace FlappyVoice.Config
             c._playfieldMinY = -4.5f;
             c._playfieldMaxY = 4.5f;
 
-            c._octaveWidthSemitones = 12;
+            c._octaveWidthSemitones = 24;
             c._anchorCaptureWindowMs = 350;
             c._anchorStabilityToleranceSemitones = 1.5f;
             c._vocalRangeClampMinHz = 55f;
@@ -118,9 +136,6 @@ namespace FlappyVoice.Config
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
-            c._flapAmplitudeUnits = 0.45f;
-            c._flapCyclesPerSec = 3.4f;
-            c._flapRiseFraction = 0.42f;
 
             c.name = "GameConfig (Default)";
             return c;

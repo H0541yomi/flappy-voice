@@ -27,9 +27,6 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private VoiceHeightSource voiceHeightSource;
         [SerializeField] private PlayerController player;
 
-        // TODO: development aid, remove with DevHeightSource / DevPanelUI.
-        [SerializeField] private DevHeightSource devHeightSource;
-
         [Header("Audio")]
         [SerializeField] private PitchTracker pitchTracker;
         [SerializeField] private MicrophoneInput microphoneInput;
@@ -37,14 +34,8 @@ namespace FlappyVoice.Gameplay
         [Header("UI")]
         [SerializeField] private ShareService shareService;
         [SerializeField] private HudUI hud;
-        [SerializeField] private NoteBarUI noteBar;
-        [SerializeField] private DevPanelUI devPanel;
+        [SerializeField] private TunerBarUI tunerBar;
         [SerializeField] private Camera viewCamera;
-
-        // TODO: optional on purpose. The scene keeps "PitchMeter (DISABLED TODO)" present but
-        // inactive until the bar is redesigned for the clamped A-to-A range, and an inactive or
-        // absent meter must not be reported as a broken scene.
-        [SerializeField] private PitchMeterUI pitchMeter;
         [SerializeField] private EndScreenUI endScreen;
 
         [Header("Startup")]
@@ -70,7 +61,7 @@ namespace FlappyVoice.Gameplay
             if (pipeSpawner != null)
             {
                 pipeSpawner.Configure(config, stateManager);
-                pipeSpawner.SetVoiceSource(voiceHeightSource);
+                pipeSpawner.SetPlayer(player);
             }
 
             if (attractPilot != null)
@@ -96,7 +87,6 @@ namespace FlappyVoice.Gameplay
             {
                 player.Configure(config, stateManager, voiceHeightSource, attractPilot);
                 player.SetScoreManager(scoreManager);
-                player.SetDevSource(devHeightSource);
             }
 
             if (hud != null)
@@ -104,19 +94,9 @@ namespace FlappyVoice.Gameplay
                 hud.Configure(scoreManager, pitchTracker, stateManager);
             }
 
-            if (noteBar != null)
+            if (tunerBar != null)
             {
-                noteBar.Configure(config, voiceHeightSource, devHeightSource, viewCamera);
-            }
-
-            if (devPanel != null)
-            {
-                devPanel.Configure(config, devHeightSource, voiceHeightSource);
-            }
-
-            if (pitchMeter != null)
-            {
-                pitchMeter.Configure(voiceHeightSource, pitchTracker);
+                tunerBar.Configure(config, voiceHeightSource, pipeSpawner, player);
             }
 
             if (endScreen != null)
@@ -187,9 +167,7 @@ namespace FlappyVoice.Gameplay
             Collect(ref missing, microphoneInput, nameof(microphoneInput));
             Collect(ref missing, shareService, nameof(shareService));
             Collect(ref missing, hud, nameof(hud));
-            Collect(ref missing, noteBar, nameof(noteBar));
-            Collect(ref missing, devPanel, nameof(devPanel));
-            Collect(ref missing, devHeightSource, nameof(devHeightSource));
+            Collect(ref missing, tunerBar, nameof(tunerBar));
             Collect(ref missing, viewCamera, nameof(viewCamera));
             Collect(ref missing, endScreen, nameof(endScreen));
 

@@ -10,21 +10,21 @@ namespace FlappyVoice.Gameplay
         private GameStateManager _state;
         private VoiceHeightSource _voice;
         private AttractPilot _attract;
-        private DevHeightSource _dev;
         private ScoreManager _score;
 
-        // Mean of 1 - x^2 over a full ballistic arc. Both halves are the same shape, so the value
-        // holds for any rise/fall split.
-        private const float MeanUnitHeight = 2f / 3f;
-
         private Rigidbody2D _body;
+        private Collider2D _collider;
         private float _currentY;
         private float _dampVelocity;
-        private float _flapTime;
 
         public float CurrentHeight01 => _config == null
             ? 0.5f
             : Mathf.Clamp01(Mathf.InverseLerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, _currentY));
+
+        // Half the height of the body that has to fit through a pipe gap. The tuner reads it to
+        // work out which pitches actually clear the gap ahead, so it has to be the collider's own
+        // size rather than a number written down twice.
+        public float BodyRadiusUnits => _collider != null ? _collider.bounds.extents.y : 0.42f;
 
         private void Awake()
         {
@@ -37,10 +37,12 @@ namespace FlappyVoice.Gameplay
             // body never raises collision events against them and death never fires.
             _body.useFullKinematicContacts = true;
 
-            if (GetComponent<Collider2D>() == null)
+            _collider = GetComponent<Collider2D>();
+            if (_collider == null)
             {
-                CircleCollider2D collider = gameObject.AddComponent<CircleCollider2D>();
-                collider.radius = 0.35f;
+                CircleCollider2D circle = gameObject.AddComponent<CircleCollider2D>();
+                circle.radius = 0.35f;
+                _collider = circle;
             }
 
             _currentY = transform.position.y;
@@ -74,14 +76,6 @@ namespace FlappyVoice.Gameplay
             _score = score;
         }
 
-        // TODO: development aid, remove with DevHeightSource. When dev mode is on it outranks both
-        // the voice and the attract pilot, and it also starts the run, because there is no sung note
-        // to trigger the usual attract -> playing handoff.
-        public void SetDevSource(DevHeightSource dev)
-        {
-            _dev = dev;
-        }
-
         private void OnDestroy()
         {
             if (_state != null)
@@ -99,7 +93,6 @@ namespace FlappyVoice.Gameplay
 
             _currentY = (_config.PlayfieldMinY + _config.PlayfieldMaxY) * 0.5f;
             _dampVelocity = 0f;
-            _flapTime = 0f;
             ApplyPosition(_currentY);
         }
 
@@ -128,9 +121,8 @@ namespace FlappyVoice.Gameplay
             }
 
             GameState state = _state != null ? _state.State : GameState.Attract;
-            bool devDriving = _dev != null && _dev.Enabled;
 
-            if (state == GameState.Attract && _state != null && (devDriving || (_voice != null && _voice.IsAnchored)))
+            if (state == GameState.Attract && _state != null && _voice != null && _voice.IsAnchored)
             {
                 _state.StartRun();
                 state = _state.State;
@@ -141,9 +133,7 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
-            IHeightSource source = devDriving
-                ? _dev
-                : state == GameState.Playing ? (IHeightSource)_voice : _attract;
+            IHeightSource source = state == GameState.Playing ? (IHeightSource)_voice : _attract;
             float target01 = source != null ? Mathf.Clamp01(source.TargetHeight01) : 0.5f;
             float targetY = Mathf.Lerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, target01);
 
@@ -159,55 +149,7 @@ namespace FlappyVoice.Gameplay
 
             _currentY = y;
 
-            // The flap is added after SmoothDamp and after the MaxVerticalSpeed step clamp, both
-            // of which govern the pitch-driven position only. Folding it in here keeps the bob at
-            // full amplitude (its own peak speed would otherwise be eaten by the speed budget)
-            // while still moving the collider, so flapping up into a pipe kills the player.
-            float period = 1f / Mathf.Max(0.01f, _config.FlapCyclesPerSec);
-            _flapTime += deltaTime;
-            if (_flapTime >= period)
-            {
-                _flapTime -= period * Mathf.Floor(_flapTime / period);
-            }
-
-            float flapOffset = FlapOffset(_flapTime, period, _config.FlapAmplitudeUnits, _config.FlapRiseFraction);
-            float renderedY = Mathf.Clamp(y + flapOffset, _config.PlayfieldMinY, _config.PlayfieldMaxY);
-
-            ApplyPosition(renderedY);
-        }
-
-        // Two ballistic arcs rather than a sine: constant acceleration on the way up and on the way
-        // down, meeting in a cusp at the bottom of the stroke. That cusp is what reads as a bounce -
-        // a sine eases through the bottom and reads as floating. riseFraction < 0.5 spends less of
-        // the period going up than coming down, i.e. a harder launch than fall.
-        //
-        // Returns an offset centred on the stroke's TIME average, not on its geometric midpoint: a
-        // ballistic arc lingers near the apex, so centring on the midpoint would make the bird read
-        // as sitting above the note it is actually singing. peakToPeakUnits is the full travel.
-        public static float FlapOffset(float time, float period, float peakToPeakUnits, float riseFraction)
-        {
-            if (period <= 0f || peakToPeakUnits == 0f)
-            {
-                return 0f;
-            }
-
-            float t = Mathf.Repeat(time, period);
-            float rise = Mathf.Clamp(riseFraction, 0.05f, 0.95f) * period;
-            float fall = period - rise;
-
-            float unit;
-            if (t < rise)
-            {
-                float remaining = 1f - (t / rise);
-                unit = 1f - (remaining * remaining);
-            }
-            else
-            {
-                float fallen = fall > 0f ? (t - rise) / fall : 1f;
-                unit = 1f - (fallen * fallen);
-            }
-
-            return (unit - MeanUnitHeight) * peakToPeakUnits;
+            ApplyPosition(y);
         }
 
         private void ApplyPosition(float y)
@@ -247,6 +189,21 @@ namespace FlappyVoice.Gameplay
         }
 
         private void OnCollisionEnter2D(Collision2D collision)
+        {
+            HandlePipeContact(collision);
+        }
+
+        // Enter fires once, on the frame the overlap begins. An overlap that began while the run
+        // had not started yet - death is off in attract mode - therefore never produces an Enter
+        // once it does start, and the pipe would slide harmlessly through the bird. Stay closes
+        // that hole; the spawner also clears pipes sitting on the bird at the handoff, so this
+        // fires for real mid-run contact rather than for a start the player never controlled.
+        private void OnCollisionStay2D(Collision2D collision)
+        {
+            HandlePipeContact(collision);
+        }
+
+        private void HandlePipeContact(Collision2D collision)
         {
             if (_state == null || _state.State != GameState.Playing)
             {

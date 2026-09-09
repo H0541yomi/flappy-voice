@@ -241,7 +241,9 @@ namespace FlappyVoice.Tests
 
             Assert.That(anchor.IsAnchored, Is.False);
             Assert.That(anchor.FloorMidi, Is.EqualTo(0f));
-            Assert.That(anchor.CenterMidi, Is.EqualTo(0f));
+            // CenterMidi is derived from the floor now, so it has nothing of its own to clear; the
+            // captured note is what the anchor still stores.
+            Assert.That(anchor.AnchorMidi, Is.EqualTo(0f));
             Assert.That(anchor.TryCapture(220f, Dt), Is.False);
         }
 
@@ -255,6 +257,81 @@ namespace FlappyVoice.Tests
                 Assert.That(anchor.TryCapture(330f, Dt), Is.False);
             }
             Assert.That(anchor.FloorMidi, Is.EqualTo(51f).Within(0.01f));
+        }
+        // ---- anchoring at the height of the pipe ahead -----------------------------------------
+
+        [TestCase(0f)]
+        [TestCase(0.25f)]
+        [TestCase(0.5f)]
+        [TestCase(1f)]
+        public void TryCapture_PlacesTheSungNoteAtTheRequestedHeight(float height)
+        {
+            var anchor = new OctaveAnchor();
+            anchor.Configure(0.35f, 1.5f, 70f, 700f, Width);
+
+            const float midi = 57f;
+            for (int i = 0; i < 120 && !anchor.IsAnchored; i++)
+            {
+                anchor.TryCapture(PitchMath.MidiToHz(midi), Dt, height);
+            }
+
+            Assert.That(anchor.IsAnchored, Is.True);
+            Assert.That(PitchMath.ClampToOctaveHeight(midi, anchor.FloorMidi, Width),
+                Is.EqualTo(height).Within(1e-4f));
+        }
+
+        // A high pipe means a high first note: what is left of the range sits BELOW the note, and
+        // the ceiling is right above it.
+        [Test]
+        public void TryCapture_HighTargetLeavesTheRangeBelowTheNote()
+        {
+            var anchor = new OctaveAnchor();
+            anchor.Configure(0.35f, 1.5f, 70f, 700f, Width);
+
+            const float midi = 57f;
+            for (int i = 0; i < 120 && !anchor.IsAnchored; i++)
+            {
+                anchor.TryCapture(PitchMath.MidiToHz(midi), Dt, 1f);
+            }
+
+            Assert.That(anchor.CeilingMidi, Is.EqualTo(midi).Within(0.01f));
+            Assert.That(anchor.FloorMidi, Is.EqualTo(midi - Width).Within(0.01f));
+        }
+
+        [Test]
+        public void SetNoteAtHeight_ClampsTheHeightAndReportsIt()
+        {
+            var anchor = MakeAnchor();
+
+            anchor.SetNoteAtHeight(57f, 4f);
+            Assert.That(anchor.AnchorHeight01, Is.EqualTo(1f).Within(1e-4f));
+            Assert.That(anchor.FloorMidi, Is.EqualTo(45f).Within(0.01f));
+
+            anchor.SetNoteAtHeight(57f, -4f);
+            Assert.That(anchor.AnchorHeight01, Is.EqualTo(0f).Within(1e-4f));
+            Assert.That(anchor.FloorMidi, Is.EqualTo(57f).Within(0.01f));
+        }
+
+        // CenterMidi is the middle of the range, which is no longer the note that was sung.
+        [Test]
+        public void CenterMidi_IsTheMiddleOfTheRangeNotTheSungNote()
+        {
+            var anchor = MakeAnchor();
+            anchor.SetNoteAtHeight(57f, 1f);
+
+            Assert.That(anchor.AnchorMidi, Is.EqualTo(57f).Within(0.01f));
+            Assert.That(anchor.CenterMidi, Is.EqualTo(51f).Within(0.01f));
+        }
+
+        [Test]
+        public void Reset_ForgetsTheAnchorHeight()
+        {
+            var anchor = MakeAnchor();
+            anchor.SetNoteAtHeight(57f, 1f);
+            anchor.Reset();
+
+            Assert.That(anchor.IsAnchored, Is.False);
+            Assert.That(anchor.AnchorHeight01, Is.EqualTo(0.5f).Within(1e-4f));
         }
     }
 }

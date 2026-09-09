@@ -54,14 +54,6 @@ namespace FlappyVoice.Gameplay
                 _config.OctaveWidthSemitones);
         }
 
-        // Used by dev mode, which drives the bird from a slider and therefore never sings a note to
-        // anchor with. Without a floor there is no note letter to put on a pipe or on the note bar.
-        public void ForceAnchor(float centerMidi)
-        {
-            _anchor.SetCenterMidi(centerMidi);
-            OnAnchorChanged?.Invoke();
-        }
-
         public void ResetForNewRun()
         {
             _anchor.Reset();
@@ -89,7 +81,6 @@ namespace FlappyVoice.Gameplay
             PitchSample sample = _tracker.Current;
             if (!sample.IsVoiced || sample.FrequencyHz <= 0f)
             {
-                RequestHandoffCentering(false);
                 IsActive = false;
                 CurrentMidi = -1f;
                 return;
@@ -101,18 +92,16 @@ namespace FlappyVoice.Gameplay
 
             if (!_anchor.IsAnchored)
             {
-                RequestHandoffCentering(true);
-
-                // The first sung note becomes the CENTRE of the range, so the handoff lands the bird
-                // at mid-screen - which is exactly where the attract pilot is being eased to. That
-                // makes the snap at handoff near-zero instead of up to half a screen.
-                if (!_anchor.TryCapture(sample.FrequencyHz, deltaTime))
+                // The first sung note is placed at the height of the gap the attract pilot is
+                // flying at, not at mid-screen: the note that starts the run is then the note that
+                // threads the first pipe, and the bird is already sitting where the handoff will
+                // put it, so there is nothing to snap.
+                if (!_anchor.TryCapture(sample.FrequencyHz, deltaTime, HandoffTargetHeight()))
                 {
                     IsActive = false;
                     return;
                 }
 
-                RequestHandoffCentering(false);
                 OnAnchorChanged?.Invoke();
             }
 
@@ -124,9 +113,16 @@ namespace FlappyVoice.Gameplay
             IsActive = true;
         }
 
-        private void RequestHandoffCentering(bool centering)
+        // No pipe on screen to aim at - the very first frames of a run, or a run that starts before
+        // the first spawn - so there is nothing better than the middle of the range.
+        private float HandoffTargetHeight()
         {
-            if (_attractPilot != null) _attractPilot.SetHandoffCentering(centering);
+            if (_attractPilot != null && _attractPilot.TryGetGapTargetHeight(out float gapHeight))
+            {
+                return gapHeight;
+            }
+
+            return FallbackHandoffHeight;
         }
     }
 }

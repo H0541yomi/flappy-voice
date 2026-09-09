@@ -28,7 +28,6 @@ namespace FlappyVoice.Editor
         private const string ArtFolder = "Assets/Art/Placeholder";
         private const string BirdSpritePath = "Assets/Art/Placeholder/Bird.png";
         private const string PipeSpritePath = "Assets/Art/Placeholder/PipeSection.png";
-        private const string SolidSpritePath = "Assets/Art/Placeholder/Solid.png";
         private const int PixelsPerUnit = 64;
 
         private static readonly Vector2 ReferenceResolution = new Vector2(1080f, 1920f);
@@ -60,7 +59,6 @@ namespace FlappyVoice.Editor
             GameConfig config = EnsureConfig();
             Sprite birdSprite = EnsureBirdSprite();
             Sprite pipeSprite = EnsurePipeSprite();
-            Sprite solidSprite = EnsureSolidSprite();
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -82,20 +80,15 @@ namespace FlappyVoice.Editor
             GameObject heightGo = new GameObject("HeightSources");
             VoiceHeightSource voiceHeight = heightGo.AddComponent<VoiceHeightSource>();
             AttractPilot attractPilot = heightGo.AddComponent<AttractPilot>();
-            // TODO: development aid, delete this component and DevPanel before shipping.
-            DevHeightSource devHeight = heightGo.AddComponent<DevHeightSource>();
 
             GameObject spawnerGo = new GameObject("PipeSpawner");
             PipeSpawner pipeSpawner = spawnerGo.AddComponent<PipeSpawner>();
 
             PlayerController player = BuildPlayer(config, birdSprite);
 
-            NoteBarUI noteBar = BuildNoteBar(solidSprite);
-
             Canvas canvas = BuildCanvas(camera);
             HudUI hud = BuildHud(canvas.transform);
-            DevPanelUI devPanel = BuildDevPanel(canvas.transform);
-            PitchMeterUI pitchMeter = BuildPitchMeter(canvas.transform);
+            TunerBarUI tunerBar = BuildTunerBar(canvas.transform);
             EndScreenUI endScreen = BuildEndScreen(canvas.transform, camera);
 
             pitchTracker.Configure(config);
@@ -103,16 +96,13 @@ namespace FlappyVoice.Editor
             voiceHeight.Configure(config, pitchTracker);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
             hud.Configure(scoreManager, pitchTracker, stateManager);
-            noteBar.Configure(config, voiceHeight, devHeight, camera);
-            devPanel.Configure(config, devHeight, voiceHeight);
-            pitchMeter.Configure(voiceHeight, pitchTracker);
+            tunerBar.Configure(config, voiceHeight, pipeSpawner, player);
             endScreen.Configure(stateManager, scoreManager, shareService);
 
             UnityEngine.Object[] candidates =
             {
                 config, stateManager, scoreManager, shareService, microphoneInput, pitchTracker,
-                voiceHeight, attractPilot, devHeight, pipeSpawner, player, camera, hud, noteBar,
-                devPanel, pitchMeter, endScreen,
+                voiceHeight, attractPilot, pipeSpawner, player, camera, hud, tunerBar, endScreen,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
 
@@ -123,13 +113,10 @@ namespace FlappyVoice.Editor
             AutoWireByType(pitchTracker, candidates);
             AutoWireByType(voiceHeight, candidates);
             AutoWireByType(attractPilot, candidates);
-            AutoWireByType(devHeight, candidates);
             AutoWireByType(pipeSpawner, candidates);
             AutoWireByType(player, candidates);
             AutoWireByType(hud, candidates);
-            AutoWireByType(noteBar, candidates);
-            AutoWireByType(devPanel, candidates);
-            AutoWireByType(pitchMeter, candidates);
+            AutoWireByType(tunerBar, candidates);
             AutoWireByType(endScreen, candidates);
 
             foreach (UnityEngine.Object candidate in candidates)
@@ -146,8 +133,8 @@ namespace FlappyVoice.Editor
             GameObject bootstrapGo = new GameObject("GameBootstrap");
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
-                pitchTracker, voiceHeight, attractPilot, devHeight, pipeSpawner, player, camera, hud,
-                noteBar, devPanel, pitchMeter, endScreen);
+                pitchTracker, voiceHeight, attractPilot, pipeSpawner, player, camera, hud,
+                tunerBar, endScreen);
             EditorUtility.SetDirty(bootstrap);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -237,7 +224,7 @@ namespace FlappyVoice.Editor
         private static GameObject BuildPipePrefab(GameConfig config, Sprite pipeSprite)
         {
             float span = Mathf.Max(2f, config.PlayfieldMaxY - config.PlayfieldMinY);
-            float gap = Mathf.Max(0.5f, config.PipeGapSize);
+            float gap = Mathf.Max(0.5f, config.PipeGapSizeAtDifficulty(0f));
             float sectionHeight = Mathf.Max(0.5f, (span - gap) * 0.5f);
 
             GameObject root = new GameObject("Pipe");
@@ -259,14 +246,6 @@ namespace FlappyVoice.Editor
             gapCollider.size = new Vector2(0.25f, gap);
 
             Pipe pipe = root.AddComponent<Pipe>();
-            TextMeshPro noteLabel = BuildPipeNoteLabel(gapTrigger.transform, pipeSprite);
-
-            // Wired before WirePipeSections so the fuzzy name matcher there can never claim it:
-            // it only fills references that are still null.
-            SerializedObject noteSo = new SerializedObject(pipe);
-            SetRef(noteSo, "noteLabel", noteLabel);
-            noteSo.ApplyModifiedPropertiesWithoutUndo();
-
             WirePipeSections(pipe, top, bottom, gapTrigger);
 
             PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
@@ -279,57 +258,6 @@ namespace FlappyVoice.Editor
                 Debug.LogWarning($"[SceneBuilder] failed to load pipe prefab at {PipePrefabPath}");
             }
             return prefab;
-        }
-
-        // Parented under the gap trigger because Pipe.Setup repositions that transform to the gap
-        // centre on every spawn, so the letter follows the gap with no extra runtime code. The
-        // names avoid "top"/"bottom"/"gap"/"trigger"/"score" so WirePipeSections cannot claim it,
-        // and neither object carries a collider, keeping it out of scoring and death contacts.
-        private static TextMeshPro BuildPipeNoteLabel(Transform gapTrigger, Sprite pipeSprite)
-        {
-            GameObject chip = new GameObject("NoteChip");
-            chip.transform.SetParent(gapTrigger, false);
-            chip.transform.localPosition = new Vector3(0f, 0f, -0.1f);
-            chip.transform.localScale = new Vector3(1.5f, 1.5f, 1f);
-
-            SpriteRenderer chipRenderer = chip.AddComponent<SpriteRenderer>();
-            chipRenderer.sprite = pipeSprite;
-            chipRenderer.drawMode = SpriteDrawMode.Simple;
-            chipRenderer.color = new Color(0.04f, 0.05f, 0.09f, 0.8f);
-            // Above the pipe sections (5) but below the bird (10).
-            chipRenderer.sortingOrder = 6;
-
-            GameObject labelGo = new GameObject("NoteLetter", typeof(RectTransform));
-            labelGo.transform.SetParent(gapTrigger, false);
-            labelGo.transform.localPosition = new Vector3(0f, 0f, -0.2f);
-            labelGo.transform.localScale = Vector3.one;
-
-            RectTransform rect = (RectTransform)labelGo.transform;
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(1.35f, 0.95f);
-
-            TextMeshPro label = labelGo.AddComponent<TextMeshPro>();
-            TMP_FontAsset font = ResolveFont();
-            if (font != null)
-            {
-                label.font = font;
-            }
-            label.text = "A";
-            label.textWrappingMode = TextWrappingModes.NoWrap;
-            label.alignment = TextAlignmentOptions.Center;
-            label.fontStyle = FontStyles.Bold;
-            label.color = Color.white;
-            label.raycastTarget = false;
-            // Auto-size against the fixed rect so a letter or an accidental "A#" always fits,
-            // without depending on the default font asset's sampling point size.
-            label.fontSize = 14f;
-            label.fontSizeMin = 3f;
-            label.fontSizeMax = 16f;
-            label.enableAutoSizing = true;
-            label.sortingOrder = 7;
-            return label;
         }
 
         // Pipe.Setup sizes each section purely through localScale, so the section must stay a
@@ -402,7 +330,8 @@ namespace FlappyVoice.Editor
 
             TextMeshProUGUI scoreLabel = NewText("ScoreLabel", scoreGroupGo.transform, "0", 170f,
                 TextAlignmentOptions.Center);
-            Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -140f),
+            // Below the tuner strip, which owns the top of the screen.
+            Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -352f),
                 new Vector2(700f, 220f));
 
             GameObject meterGroupGo = NewUI("MeterGroup", root.transform);
@@ -447,7 +376,7 @@ namespace FlappyVoice.Editor
             singGroup.blocksRaycasts = false;
 
             GameObject singPlate = NewUI("Plate", singGroupGo.transform);
-            Place(singPlate, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 330f),
+            Place(singPlate, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
                 new Vector2(920f, 260f));
 
             Image singBackdrop = NewImage("Backdrop", singPlate.transform, new Color(0f, 0f, 0f, 0.62f));
@@ -472,201 +401,115 @@ namespace FlappyVoice.Editor
             return hud;
         }
 
-        // World space, not canvas space: the bar has to line up with pipe gaps and with the bird,
-        // and those are world objects. A canvas-space bar would only agree with them at the one
-        // aspect ratio it was authored at.
-        private static NoteBarUI BuildNoteBar(Sprite solidSprite)
+        // Pano-style chromatic tuner across the top: the note letters and the ten-cent ruler sit on
+        // ONE sliding dial and the needle is nailed to the middle of the bar. The reading is then
+        // unambiguous - the letter by the needle is the note, its distance from the needle is the
+        // error - and a frame costs one transform move instead of a relayout of every tick.
+        private static TunerBarUI BuildTunerBar(Transform canvas)
         {
-            GameObject root = new GameObject("NoteBar");
-            NoteBarUI noteBar = root.AddComponent<NoteBarUI>();
+            const float barHeight = 300f;
+            // Ticks own the top of the strip, letters the middle, readouts the bottom row, so
+            // nothing in the dial can end up drawn over the note or cents read-out.
+            const float readoutRowHeight = 56f;
+            const float topMargin = 24f;
+            const float dialSemitones = 9f;
+            float px = TunerBarUI.PixelsPerSemitone;
 
-            GameObject barGo = new GameObject("Bar");
-            barGo.transform.SetParent(root.transform, false);
-            SpriteRenderer bar = barGo.AddComponent<SpriteRenderer>();
-            bar.sprite = solidSprite;
-            bar.color = new Color(1f, 1f, 1f, 0.75f);
-            // Above the pipes and their note chips (5-7), below the bird (10).
-            bar.sortingOrder = 8;
+            GameObject root = NewUI("TunerBar", canvas);
+            TunerBarUI tuner = root.AddComponent<TunerBarUI>();
 
-            GameObject labelGo = new GameObject("NoteLetter", typeof(RectTransform));
-            labelGo.transform.SetParent(root.transform, false);
-            RectTransform rect = (RectTransform)labelGo.transform;
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(1.6f, 0.8f);
+            // Stretched across the full width so the strip never leaves a gap at the screen edges,
+            // with only its height authored.
+            RectTransform rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = new Vector2(0f, 1f);
+            rootRect.anchorMax = new Vector2(1f, 1f);
+            rootRect.pivot = new Vector2(0.5f, 1f);
+            rootRect.offsetMax = new Vector2(0f, -topMargin);
+            rootRect.offsetMin = new Vector2(0f, -(topMargin + barHeight));
 
-            TextMeshPro label = labelGo.AddComponent<TextMeshPro>();
-            TMP_FontAsset font = ResolveFont();
-            if (font != null)
+            Image backdrop = NewImage("Backdrop", root.transform, new Color(0.04f, 0.05f, 0.09f, 0.72f));
+            Stretch(backdrop.gameObject);
+
+            // The dial is wider than the screen at portrait aspect, so it has to be clipped rather
+            // than left to spill its outer letters over the rest of the HUD.
+            GameObject viewport = NewUI("Viewport", root.transform);
+            Stretch(viewport);
+            viewport.AddComponent<RectMask2D>();
+
+            // Inside the viewport so it is clipped like the dial, but NOT a child of the dial: its
+            // width and position are the gap's business, not the current note's. Sized at runtime,
+            // so whatever is authored here is only what shows in the editor.
+            Image safeBand = NewImage("SafeBand", viewport.transform, new Color(0.36f, 0.85f, 0.51f, 0.22f));
+            Place(safeBand.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero,
+                new Vector2(px * 2f, barHeight - readoutRowHeight));
+
+            GameObject dialGo = NewUI("Dial", viewport.transform);
+            Place(dialGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero,
+                new Vector2(px * dialSemitones, barHeight));
+            CanvasGroup dialGroup = dialGo.AddComponent<CanvasGroup>();
+            dialGroup.interactable = false;
+            dialGroup.blocksRaycasts = false;
+
+            BuildTunerTicks(dialGo.transform, px, dialSemitones);
+
+            TMP_Text[] labels = new TMP_Text[TunerBarUI.NoteSlotCount];
+            int center = TunerBarUI.NoteSlotCount / 2;
+            for (int i = 0; i < labels.Length; i++)
             {
-                label.font = font;
-            }
-            label.text = "--";
-            label.textWrappingMode = TextWrappingModes.NoWrap;
-            label.alignment = TextAlignmentOptions.Left;
-            label.fontStyle = FontStyles.Bold;
-            label.color = new Color(1f, 1f, 1f, 0.75f);
-            label.raycastTarget = false;
-            label.fontSize = 10f;
-            label.fontSizeMin = 3f;
-            label.fontSizeMax = 12f;
-            label.enableAutoSizing = true;
-            label.sortingOrder = 9;
-
-            SerializedObject so = new SerializedObject(noteBar);
-            SetRef(so, "bar", bar);
-            SetRef(so, "noteLabel", label);
-            so.ApplyModifiedPropertiesWithoutUndo();
-            return noteBar;
-        }
-
-        // TODO: development aid. Delete this builder, DevPanelUI and DevHeightSource before shipping.
-        private static DevPanelUI BuildDevPanel(Transform canvas)
-        {
-            GameObject root = NewUI("DevPanel (TODO remove)", canvas);
-            Place(root, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(30f, 0f),
-                new Vector2(180f, 1240f));
-            DevPanelUI panel = root.AddComponent<DevPanelUI>();
-
-            GameObject toggleGo = NewUI("DevToggle", root.transform);
-            Place(toggleGo, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(76f, 76f));
-            Image toggleBg = NewImage("Background", toggleGo.transform, new Color(0f, 0f, 0f, 0.6f));
-            Stretch(toggleBg.gameObject);
-            toggleBg.raycastTarget = true;
-            Image check = NewImage("Checkmark", toggleBg.transform, new Color(0.36f, 0.85f, 0.51f, 1f));
-            RectTransform checkRect = check.rectTransform;
-            checkRect.anchorMin = Vector2.zero;
-            checkRect.anchorMax = Vector2.one;
-            checkRect.offsetMin = new Vector2(12f, 12f);
-            checkRect.offsetMax = new Vector2(-12f, -12f);
-
-            Toggle toggle = toggleGo.AddComponent<Toggle>();
-            toggle.targetGraphic = toggleBg;
-            toggle.graphic = check;
-            toggle.isOn = false;
-
-            TextMeshProUGUI toggleLabel = NewText("ToggleLabel", root.transform, "DEV", 34f,
-                TextAlignmentOptions.Center);
-            Place(toggleLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -84f),
-                new Vector2(180f, 44f));
-            toggleLabel.color = new Color(1f, 1f, 1f, 0.8f);
-
-            GameObject groupGo = NewUI("SliderGroup", root.transform);
-            Place(groupGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(180f, 1080f));
-            CanvasGroup group = groupGo.AddComponent<CanvasGroup>();
-            group.alpha = 0.35f;
-            group.interactable = false;
-            group.blocksRaycasts = false;
-
-            GameObject sliderGo = NewUI("HeightSlider", groupGo.transform);
-            Place(sliderGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 100f),
-                new Vector2(68f, 940f));
-            Image sliderBg = NewImage("Background", sliderGo.transform, new Color(0f, 0f, 0f, 0.55f));
-            Stretch(sliderBg.gameObject);
-            sliderBg.raycastTarget = true;
-
-            GameObject fillArea = NewUI("Fill Area", sliderGo.transform);
-            Stretch(fillArea);
-            Image fill = NewImage("Fill", fillArea.transform, new Color(0.32f, 0.52f, 0.92f, 0.85f));
-            Stretch(fill.gameObject);
-
-            GameObject handleArea = NewUI("Handle Slide Area", sliderGo.transform);
-            Stretch(handleArea);
-            Image handle = NewImage("Handle", handleArea.transform, Color.white);
-            handle.raycastTarget = true;
-            RectTransform handleRect = handle.rectTransform;
-            handleRect.sizeDelta = new Vector2(0f, 60f);
-
-            Slider slider = sliderGo.AddComponent<Slider>();
-            slider.direction = Slider.Direction.BottomToTop;
-            slider.minValue = 0f;
-            slider.maxValue = 1f;
-            slider.wholeNumbers = false;
-            slider.fillRect = fill.rectTransform;
-            slider.handleRect = handleRect;
-            slider.targetGraphic = handle;
-            slider.SetValueWithoutNotify(0.5f);
-
-            TextMeshProUGUI readout = NewText("Readout", groupGo.transform, "DEV", 40f,
-                TextAlignmentOptions.Center);
-            Place(readout.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 20f),
-                new Vector2(180f, 64f));
-
-            SerializedObject so = new SerializedObject(panel);
-            SetRef(so, "enableToggle", toggle);
-            SetRef(so, "heightSlider", slider);
-            SetRef(so, "sliderGroup", group);
-            SetRef(so, "readout", readout);
-            so.ApplyModifiedPropertiesWithoutUndo();
-            return panel;
-        }
-
-        // TODO: the meter is built but left INACTIVE on purpose. It is not dead code - the bar was
-        // drawn for the old wrapping octave and needs a redesign for the clamped A-to-A range
-        // before it returns, so the object stays in the scene under an obviously-marked name.
-        private const string PitchMeterObjectName = "PitchMeter (DISABLED TODO)";
-
-        private static PitchMeterUI BuildPitchMeter(Transform canvas)
-        {
-            GameObject root = NewUI(PitchMeterObjectName, canvas);
-            Place(root, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-48f, 40f),
-                new Vector2(112f, 1150f));
-            PitchMeterUI meter = root.AddComponent<PitchMeterUI>();
-
-            GameObject bandGroupGo = NewUI("BandGroup", root.transform);
-            Stretch(bandGroupGo);
-            CanvasGroup bandGroup = bandGroupGo.AddComponent<CanvasGroup>();
-            bandGroup.interactable = false;
-            bandGroup.blocksRaycasts = false;
-
-            Image bandBg = NewImage("BandBackground", bandGroupGo.transform, new Color(0f, 0f, 0f, 0.5f));
-            Stretch(bandBg.gameObject);
-
-            const int segments = 12;
-            for (int i = 0; i < segments; i++)
-            {
-                float mid = (i + 0.5f) / segments;
-                Color color = PitchMeterUI.ColorForHeight(mid);
-                color.a = 0.55f;
-                Image segment = NewImage($"Segment{i:00}", bandGroupGo.transform, color);
-                RectTransform rect = segment.rectTransform;
-                rect.anchorMin = new Vector2(0f, (float)i / segments);
-                rect.anchorMax = new Vector2(1f, (i + 1f) / segments);
-                rect.offsetMin = new Vector2(0f, 1f);
-                rect.offsetMax = new Vector2(0f, -1f);
+                TextMeshProUGUI label = NewText("Note" + i, dialGo.transform, "A", 104f,
+                    TextAlignmentOptions.Center);
+                Place(label.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                    new Vector2((i - center) * px, readoutRowHeight + 8f), new Vector2(px * 0.92f, 128f));
+                label.fontStyle = FontStyles.Bold;
+                labels[i] = label;
             }
 
-            // The wrap seam is gone with the octave wrap, so the seam lines and seam flashes that
-            // marked it are no longer built and PitchMeterUI no longer references them.
-            Image indicator = NewImage("Indicator", bandGroupGo.transform, Color.white);
-            RectTransform indicatorRect = indicator.rectTransform;
-            indicatorRect.anchorMin = new Vector2(0f, 0.5f);
-            indicatorRect.anchorMax = new Vector2(1f, 0.5f);
-            indicatorRect.pivot = new Vector2(0.5f, 0.5f);
-            indicatorRect.sizeDelta = new Vector2(28f, 26f);
-            indicatorRect.anchoredPosition = Vector2.zero;
+            Image needle = NewImage("Needle", root.transform, new Color(0.93f, 0.27f, 0.31f, 1f));
+            Place(needle.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f),
+                new Vector2(6f, barHeight - readoutRowHeight - 12f));
 
-            TextMeshProUGUI noteLabel = NewText("NoteLabel", root.transform, "--", 48f, TextAlignmentOptions.Center);
-            Place(noteLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0f), new Vector2(0f, 16f),
-                new Vector2(260f, 64f));
+            TextMeshProUGUI noteReadout = NewText("NoteReadout", root.transform, "--", 44f,
+                TextAlignmentOptions.Left);
+            Place(noteReadout.gameObject, Vector2.zero, Vector2.zero, new Vector2(28f, 4f),
+                new Vector2(300f, readoutRowHeight));
 
-            TextMeshProUGUI statusLabel = NewText("StatusLabel", root.transform, "sing to set your low note", 32f,
+            TextMeshProUGUI centsReadout = NewText("CentsReadout", root.transform, string.Empty, 44f,
                 TextAlignmentOptions.Right);
-            Place(statusLabel.gameObject, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, -18f),
-                new Vector2(620f, 60f));
-            statusLabel.color = new Color(1f, 1f, 1f, 0.8f);
+            Place(centsReadout.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-28f, 4f),
+                new Vector2(300f, readoutRowHeight));
 
-            SerializedObject so = new SerializedObject(meter);
-            SetRef(so, "indicator", indicatorRect);
-            SetRef(so, "indicatorGraphic", indicator);
-            SetRef(so, "bandGroup", bandGroup);
-            SetRef(so, "noteLabel", noteLabel);
-            SetRef(so, "statusLabel", statusLabel);
+            SerializedObject so = new SerializedObject(tuner);
+            SetRef(so, "dial", (RectTransform)dialGo.transform);
+            SetRef(so, "dialGroup", dialGroup);
+            SetRef(so, "safeBand", safeBand.rectTransform);
+            SetRef(so, "needle", needle);
+            SetRef(so, "noteReadout", noteReadout);
+            SetRef(so, "centsReadout", centsReadout);
+            SetRefArray(so, "noteLabels", labels);
             so.ApplyModifiedPropertiesWithoutUndo();
+            return tuner;
+        }
 
-            root.SetActive(false);
-            return meter;
+        // A tick every ten cents, taller on the semitone boundaries and tallest under each letter.
+        // That is the granularity a chromatic tuner app shows, and it is what makes a few cents of
+        // drift readable instead of merely present.
+        private static void BuildTunerTicks(Transform dial, float px, float dialSemitones)
+        {
+            int halfTicks = Mathf.RoundToInt(dialSemitones * 5f);
+            for (int i = -halfTicks; i <= halfTicks; i++)
+            {
+                int cents = i * 10;
+                int fromNote = ((cents % 100) + 100) % 100;
+                bool onNote = fromNote == 0;
+                bool onBoundary = fromNote == 50;
+
+                float height = onNote ? 54f : onBoundary ? 40f : 22f;
+                float alpha = onNote ? 0.95f : onBoundary ? 0.7f : 0.4f;
+
+                Image tick = NewImage("Tick" + i, dial, new Color(1f, 1f, 1f, alpha));
+                Place(tick.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                    new Vector2(cents / 100f * px, -10f), new Vector2(onNote ? 5f : 3f, height));
+            }
         }
 
         private static EndScreenUI BuildEndScreen(Transform canvas, Camera camera)
@@ -837,12 +680,28 @@ namespace FlappyVoice.Editor
             property.objectReferenceValue = value;
         }
 
+        private static void SetRefArray(SerializedObject so, string field, UnityEngine.Object[] values)
+        {
+            SerializedProperty property = so.FindProperty(field);
+            if (property == null || !property.isArray)
+            {
+                Debug.LogWarning($"[SceneBuilder] missing serialized array field '{field}' on {so.targetObject.GetType().Name}");
+                return;
+            }
+
+            property.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+            {
+                property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+            }
+        }
+
         private static void WireBootstrap(GameBootstrap bootstrap, GameConfig config,
             GameStateManager stateManager, ScoreManager scoreManager, ShareService shareService,
             MicrophoneInput microphoneInput, PitchTracker pitchTracker, VoiceHeightSource voiceHeight,
-            AttractPilot attractPilot, DevHeightSource devHeight, PipeSpawner pipeSpawner,
-            PlayerController player, Camera viewCamera, HudUI hud, NoteBarUI noteBar,
-            DevPanelUI devPanel, PitchMeterUI pitchMeter, EndScreenUI endScreen)
+            AttractPilot attractPilot, PipeSpawner pipeSpawner,
+            PlayerController player, Camera viewCamera, HudUI hud, TunerBarUI tunerBar,
+            EndScreenUI endScreen)
         {
             SerializedObject so = new SerializedObject(bootstrap);
             SetRef(so, "config", AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath));
@@ -851,16 +710,13 @@ namespace FlappyVoice.Editor
             SetRef(so, "pipeSpawner", pipeSpawner);
             SetRef(so, "attractPilot", attractPilot);
             SetRef(so, "voiceHeightSource", voiceHeight);
-            SetRef(so, "devHeightSource", devHeight);
             SetRef(so, "player", player);
             SetRef(so, "viewCamera", viewCamera);
             SetRef(so, "pitchTracker", pitchTracker);
             SetRef(so, "microphoneInput", microphoneInput);
             SetRef(so, "shareService", shareService);
             SetRef(so, "hud", hud);
-            SetRef(so, "noteBar", noteBar);
-            SetRef(so, "devPanel", devPanel);
-            SetRef(so, "pitchMeter", pitchMeter);
+            SetRef(so, "tunerBar", tunerBar);
             SetRef(so, "endScreen", endScreen);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -1047,18 +903,6 @@ namespace FlappyVoice.Editor
         private static Sprite EnsurePipeSprite()
         {
             return EnsureSprite(PipeSpritePath, 64, 64, PaintPipe, SpriteMeshType.FullRect);
-        }
-
-        private static Sprite EnsureSolidSprite()
-        {
-            // The pipe sprite has a 3px inset border, which at the note bar's ~0.07 unit thickness
-            // is the entire bar. This one is flat white so it can be scaled to any size.
-            return EnsureSprite(SolidSpritePath, 64, 64, PaintSolid, SpriteMeshType.FullRect);
-        }
-
-        private static Color32 PaintSolid(int x, int y, int width, int height)
-        {
-            return new Color32(255, 255, 255, 255);
         }
 
         private static Color32 PaintBird(int x, int y, int width, int height)

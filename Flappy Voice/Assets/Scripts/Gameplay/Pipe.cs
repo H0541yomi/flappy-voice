@@ -5,19 +5,15 @@ namespace FlappyVoice.Gameplay
     public sealed class Pipe : MonoBehaviour
     {
         private const float BoundsOvershoot = 3f;
-        private const float NoteChipWidth = 1.5f;
 
         [SerializeField] private Transform _topSection;
         [SerializeField] private Transform _bottomSection;
         [SerializeField] private BoxCollider2D _scoreZone;
-        [SerializeField] private TMPro.TMP_Text noteLabel;
-        [SerializeField] private float _noteLabelOffsetY;
         [SerializeField] private float _width = 1.4f;
         [SerializeField] private float _scoreZoneWidth = 0.25f;
         [SerializeField] private Color _pipeColor = new Color(0.30f, 0.72f, 0.36f, 1f);
 
         private bool _built;
-        private bool _labelMadePassive;
 
         public float GapCenterY { get; private set; }
         public float GapSize { get; private set; }
@@ -25,9 +21,9 @@ namespace FlappyVoice.Gameplay
         public int NoteOffset { get; private set; }
         public float X => transform.position.x;
 
-        // Widest thing the pipe draws, note chip included, so the spawner can push spawn/despawn far
-        // enough past the camera edge that nothing ever pops in or out on screen.
-        public float VisualWidth => Mathf.Max(_width, NoteChipWidth);
+        // Width of the sections, used by the spawner both to push spawn/despawn past the camera
+        // edge and to work out which pipes are sitting on the bird.
+        public float Width => _width;
 
         private void Awake()
         {
@@ -63,22 +59,14 @@ namespace FlappyVoice.Gameplay
 
             _scoreZone.transform.localPosition = new Vector3(0f, gapCenterY, 0f);
             _scoreZone.size = new Vector2(_scoreZoneWidth, GapSize);
-
-            PositionNoteLabel();
         }
 
-        public void SetNote(int semitoneOffset, string noteName)
+        // Which note pair of the anchored range this gap was placed on. Nothing is drawn for it -
+        // the spawner keeps it so a recycled pipe can be asked what it was, and so consecutive
+        // gaps can be kept within singing reach of one another.
+        public void SetNoteOffset(int semitoneOffset)
         {
             NoteOffset = semitoneOffset;
-
-            if (noteLabel == null)
-            {
-                return;
-            }
-
-            MakeLabelPassive();
-            noteLabel.text = noteName;
-            PositionNoteLabel();
         }
 
         public void Move(float speed, float deltaTime)
@@ -86,40 +74,6 @@ namespace FlappyVoice.Gameplay
             Vector3 p = transform.position;
             p.x -= speed * deltaTime;
             transform.position = p;
-        }
-
-        private void PositionNoteLabel()
-        {
-            if (noteLabel == null)
-            {
-                return;
-            }
-
-            // The label may sit under a scaled child canvas, so drive it in world space:
-            // the pipe root is unscaled and unrotated, making local gap Y a world Y.
-            Transform t = noteLabel.transform;
-            Vector3 world = t.position;
-            world.y = transform.position.y + GapCenterY + _noteLabelOffsetY;
-            t.position = world;
-        }
-
-        private void MakeLabelPassive()
-        {
-            if (_labelMadePassive)
-            {
-                return;
-            }
-
-            _labelMadePassive = true;
-
-            noteLabel.raycastTarget = false;
-
-            // A collider here would double-fire the score trigger or kill the player mid-gap.
-            Collider2D stray = noteLabel.GetComponent<Collider2D>();
-            if (stray != null)
-            {
-                stray.enabled = false;
-            }
         }
 
         private void Build()
