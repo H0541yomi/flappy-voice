@@ -23,7 +23,7 @@ namespace FlappyVoice.Config
         [SerializeField] private int _octaveWidthSemitones = 12;
         [SerializeField] private int _anchorCaptureWindowMs = 350;
         [SerializeField] private float _anchorStabilityToleranceSemitones = 1.5f;
-        [SerializeField] private float _vocalRangeClampMinHz = 70f;
+        [SerializeField] private float _vocalRangeClampMinHz = 55f;
         [SerializeField] private float _vocalRangeClampMaxHz = 700f;
         [SerializeField] private float _recenterWindowSec = 4f;
         [SerializeField] private float _recenterDriftRatePerSec = 0.35f;
@@ -95,7 +95,7 @@ namespace FlappyVoice.Config
             c._octaveWidthSemitones = 12;
             c._anchorCaptureWindowMs = 350;
             c._anchorStabilityToleranceSemitones = 1.5f;
-            c._vocalRangeClampMinHz = 70f;
+            c._vocalRangeClampMinHz = 55f;
             c._vocalRangeClampMaxHz = 700f;
             c._recenterWindowSec = 4f;
             c._recenterDriftRatePerSec = 0.35f;
