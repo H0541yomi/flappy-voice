@@ -123,6 +123,15 @@ namespace FlappyVoice.Editor
                 }
             }
 
+            // Configure(...) above only lives until the scene is saved, because every recipient
+            // keeps its dependencies in non-serialized fields. GameBootstrap carries explicit
+            // serialized references and replays the whole sequence at runtime.
+            GameObject bootstrapGo = new GameObject("GameBootstrap");
+            GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
+            WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
+                pitchTracker, voiceHeight, attractPilot, pipeSpawner, player, hud, pitchMeter, endScreen);
+            EditorUtility.SetDirty(bootstrap);
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
             RegisterInBuildSettings();
@@ -199,7 +208,6 @@ namespace FlappyVoice.Editor
             float span = Mathf.Max(2f, config.PlayfieldMaxY - config.PlayfieldMinY);
             float gap = Mathf.Max(0.5f, config.PipeGapSize);
             float sectionHeight = Mathf.Max(0.5f, (span - gap) * 0.5f);
-            const float pipeWidth = 1.2f;
 
             GameObject root = new GameObject("Pipe");
             Rigidbody2D body = root.AddComponent<Rigidbody2D>();
@@ -208,9 +216,9 @@ namespace FlappyVoice.Editor
             body.gravityScale = 0f;
             body.useFullKinematicContacts = true;
 
-            GameObject top = BuildPipeSection("TopSection", root.transform, pipeSprite, pipeWidth, sectionHeight,
+            GameObject top = BuildPipeSection("TopSection", root.transform, pipeSprite,
                 (gap * 0.5f) + (sectionHeight * 0.5f));
-            GameObject bottom = BuildPipeSection("BottomSection", root.transform, pipeSprite, pipeWidth, sectionHeight,
+            GameObject bottom = BuildPipeSection("BottomSection", root.transform, pipeSprite,
                 -((gap * 0.5f) + (sectionHeight * 0.5f)));
 
             GameObject gapTrigger = new GameObject("GapTrigger");
@@ -227,22 +235,24 @@ namespace FlappyVoice.Editor
             return prefab;
         }
 
-        private static GameObject BuildPipeSection(string name, Transform parent, Sprite sprite, float width,
-            float height, float y)
+        // Pipe.Setup sizes each section purely through localScale, so the section must stay a
+        // 1x1 unit: any pre-sizing here gets multiplied by that scale into a screen-filling slab.
+        private static GameObject BuildPipeSection(string name, Transform parent, Sprite sprite, float y)
         {
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localPosition = new Vector3(0f, y, 0f);
+            go.transform.localScale = Vector3.one;
 
             SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
-            renderer.drawMode = SpriteDrawMode.Sliced;
-            renderer.size = new Vector2(width, height);
+            renderer.drawMode = SpriteDrawMode.Simple;
             renderer.color = new Color(0.36f, 0.78f, 0.44f, 1f);
             renderer.sortingOrder = 5;
 
             BoxCollider2D collider = go.AddComponent<BoxCollider2D>();
-            collider.size = new Vector2(width, height);
+            collider.size = Vector2.one;
+            collider.offset = Vector2.zero;
             return go;
         }
 
@@ -600,6 +610,29 @@ namespace FlappyVoice.Editor
                 return;
             }
             property.objectReferenceValue = value;
+        }
+
+        private static void WireBootstrap(GameBootstrap bootstrap, GameConfig config,
+            GameStateManager stateManager, ScoreManager scoreManager, ShareService shareService,
+            MicrophoneInput microphoneInput, PitchTracker pitchTracker, VoiceHeightSource voiceHeight,
+            AttractPilot attractPilot, PipeSpawner pipeSpawner, PlayerController player,
+            HudUI hud, PitchMeterUI pitchMeter, EndScreenUI endScreen)
+        {
+            SerializedObject so = new SerializedObject(bootstrap);
+            SetRef(so, "config", config);
+            SetRef(so, "stateManager", stateManager);
+            SetRef(so, "scoreManager", scoreManager);
+            SetRef(so, "pipeSpawner", pipeSpawner);
+            SetRef(so, "attractPilot", attractPilot);
+            SetRef(so, "voiceHeightSource", voiceHeight);
+            SetRef(so, "player", player);
+            SetRef(so, "pitchTracker", pitchTracker);
+            SetRef(so, "microphoneInput", microphoneInput);
+            SetRef(so, "shareService", shareService);
+            SetRef(so, "hud", hud);
+            SetRef(so, "pitchMeter", pitchMeter);
+            SetRef(so, "endScreen", endScreen);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void WirePipeSections(Pipe pipe, GameObject top, GameObject bottom, GameObject gap)

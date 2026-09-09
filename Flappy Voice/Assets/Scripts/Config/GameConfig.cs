@@ -14,8 +14,8 @@ namespace FlappyVoice.Config
         [SerializeField] private float _minSpawnIntervalSec = 1.1f;
         [SerializeField] private AnimationCurve _difficultyRampCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
         [SerializeField] private float _difficultyRampDurationSec = 90f;
-        [SerializeField] private float _pipeSpawnXOffset = 11f;
-        [SerializeField] private float _pipeDespawnX = -12f;
+        [SerializeField] private float _pipeSpawnXOffset = 5f;
+        [SerializeField] private float _pipeDespawnX = -5f;
         [SerializeField] private float _playfieldMinY = -4.5f;
         [SerializeField] private float _playfieldMaxY = 4.5f;
 
@@ -81,8 +81,8 @@ namespace FlappyVoice.Config
             c._minSpawnIntervalSec = 1.1f;
             c._difficultyRampCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
             c._difficultyRampDurationSec = 90f;
-            c._pipeSpawnXOffset = 11f;
-            c._pipeDespawnX = -12f;
+            c._pipeSpawnXOffset = 5f;
+            c._pipeDespawnX = -5f;
             c._playfieldMinY = -4.5f;
             c._playfieldMaxY = 4.5f;
 

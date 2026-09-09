@@ -43,8 +43,8 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   _difficultyRampDurationSec: 90
-  _pipeSpawnXOffset: 11
-  _pipeDespawnX: -12
+  _pipeSpawnXOffset: 5
+  _pipeDespawnX: -5
   _playfieldMinY: -4.5
   _playfieldMaxY: 4.5
   _octaveWidthSemitones: 12
