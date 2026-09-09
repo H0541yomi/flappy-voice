@@ -1,0 +1,65 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3d0cdb3ad10554e79942b2d85d00a5f6, type: 3}
+  m_Name: GameConfig
+  m_EditorClassIdentifier: FlappyVoice::FlappyVoice.Config.GameConfig
+  _pipeGapNotes: 2
+  _pipeGapClearanceUnits: 1.375
+  _minPipeGapClearanceUnits: 1.075
+  _pipeSpeed: 3
+  _maxPipeSpeed: 5.5
+  _spawnIntervalSec: 2
+  _minSpawnIntervalSec: 1.1
+  _difficultyRampCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  _difficultyRampDurationSec: 90
+  _pipeSpawnXOffset: 5
+  _pipeDespawnX: -5
+  _pipeEdgeMarginUnits: 0.8
+  _playfieldMinY: -4.5
+  _playfieldMaxY: 4.5
+  _octaveWidthSemitones: 24
+  _anchorCaptureWindowMs: 350
+  _anchorStabilityToleranceSemitones: 1.5
+  _vocalRangeClampMinHz: 55
+  _vocalRangeClampMaxHz: 700
+  _recenterWindowSec: 4
+  _recenterDriftRatePerSec: 0.35
+  _recenterEdgeThreshold: 0.15
+  _amplitudeGateRms: 0.015
+  _pitchBufferSize: 2048
+  _sustainMs: 80
+  _yinThreshold: 0.15
+  _heightSmoothTimeSec: 0.06
+  _maxVerticalSpeed: 9
