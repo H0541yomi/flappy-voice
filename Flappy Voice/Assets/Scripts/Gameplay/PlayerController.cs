@@ -15,6 +15,7 @@ namespace FlappyVoice.Gameplay
         private Rigidbody2D _body;
         private float _currentY;
         private float _dampVelocity;
+        private float _flapPhase;
 
         public float CurrentHeight01 => _config == null
             ? 0.5f
@@ -85,6 +86,7 @@ namespace FlappyVoice.Gameplay
 
             _currentY = (_config.PlayfieldMinY + _config.PlayfieldMaxY) * 0.5f;
             _dampVelocity = 0f;
+            _flapPhase = 0f;
             ApplyPosition(_currentY);
         }
 
@@ -140,7 +142,21 @@ namespace FlappyVoice.Gameplay
             y = Mathf.Clamp(y, _config.PlayfieldMinY, _config.PlayfieldMaxY);
 
             _currentY = y;
-            ApplyPosition(y);
+
+            // The flap is added after SmoothDamp and after the MaxVerticalSpeed step clamp, both
+            // of which govern the pitch-driven position only. Folding it in here keeps the bob at
+            // full amplitude (its own ~5.5 u/s peak would otherwise be eaten by the speed budget)
+            // while still moving the collider, so flapping up into a pipe kills the player.
+            _flapPhase += Mathf.PI * 2f * Mathf.Max(0f, _config.FlapCyclesPerSec) * deltaTime;
+            if (_flapPhase > Mathf.PI * 2f)
+            {
+                _flapPhase -= Mathf.PI * 2f;
+            }
+
+            float flapOffset = Mathf.Sin(_flapPhase) * _config.FlapAmplitudeUnits;
+            float renderedY = Mathf.Clamp(y + flapOffset, _config.PlayfieldMinY, _config.PlayfieldMaxY);
+
+            ApplyPosition(renderedY);
         }
 
         private void ApplyPosition(float y)
