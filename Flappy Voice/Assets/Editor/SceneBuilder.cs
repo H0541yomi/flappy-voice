@@ -619,7 +619,7 @@ namespace FlappyVoice.Editor
             HudUI hud, PitchMeterUI pitchMeter, EndScreenUI endScreen)
         {
             SerializedObject so = new SerializedObject(bootstrap);
-            SetRef(so, "config", config);
+            SetRef(so, "config", AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath));
             SetRef(so, "stateManager", stateManager);
             SetRef(so, "scoreManager", scoreManager);
             SetRef(so, "pipeSpawner", pipeSpawner);
