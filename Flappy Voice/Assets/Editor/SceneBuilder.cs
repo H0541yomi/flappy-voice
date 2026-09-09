@@ -60,7 +60,11 @@ namespace FlappyVoice.Editor
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+            // Sprite import invalidates any reference captured before it, and a stale reference
+            // serialises as null without an error. Re-load after every asset write.
+            config = ReloadConfig(config);
             GameObject pipePrefab = BuildPipePrefab(config, pipeSprite);
+            config = ReloadConfig(config);
             Camera camera = BuildCamera(config);
             GameObject managersGo = new GameObject("Managers");
             GameStateManager stateManager = managersGo.AddComponent<GameStateManager>();
@@ -162,6 +166,17 @@ namespace FlappyVoice.Editor
             return AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath) ?? config;
         }
 
+        private static GameConfig ReloadConfig(GameConfig current)
+        {
+            GameConfig fresh = AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath);
+            if (fresh == null)
+            {
+                Debug.LogWarning($"[SceneBuilder] could not re-load GameConfig at {ConfigPath}");
+                return current;
+            }
+            return fresh;
+        }
+
         private static Camera BuildCamera(GameConfig config)
         {
             GameObject go = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
@@ -228,11 +243,77 @@ namespace FlappyVoice.Editor
             gapCollider.size = new Vector2(0.25f, gap);
 
             Pipe pipe = root.AddComponent<Pipe>();
+            TextMeshPro noteLabel = BuildPipeNoteLabel(gapTrigger.transform, pipeSprite);
+
+            // Wired before WirePipeSections so the fuzzy name matcher there can never claim it:
+            // it only fills references that are still null.
+            SerializedObject noteSo = new SerializedObject(pipe);
+            SetRef(noteSo, "noteLabel", noteLabel);
+            noteSo.ApplyModifiedPropertiesWithoutUndo();
+
             WirePipeSections(pipe, top, bottom, gapTrigger);
 
-            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
+            PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
             UnityEngine.Object.DestroyImmediate(root);
+            // Re-load rather than trusting the value SaveAsPrefabAsset returned: the reference is
+            // captured before the asset import settles, and a stale one serialises as null.
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PipePrefabPath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[SceneBuilder] failed to load pipe prefab at {PipePrefabPath}");
+            }
             return prefab;
+        }
+
+        // Parented under the gap trigger because Pipe.Setup repositions that transform to the gap
+        // centre on every spawn, so the letter follows the gap with no extra runtime code. The
+        // names avoid "top"/"bottom"/"gap"/"trigger"/"score" so WirePipeSections cannot claim it,
+        // and neither object carries a collider, keeping it out of scoring and death contacts.
+        private static TextMeshPro BuildPipeNoteLabel(Transform gapTrigger, Sprite pipeSprite)
+        {
+            GameObject chip = new GameObject("NoteChip");
+            chip.transform.SetParent(gapTrigger, false);
+            chip.transform.localPosition = new Vector3(0f, 0f, -0.1f);
+            chip.transform.localScale = new Vector3(1.5f, 1.5f, 1f);
+
+            SpriteRenderer chipRenderer = chip.AddComponent<SpriteRenderer>();
+            chipRenderer.sprite = pipeSprite;
+            chipRenderer.drawMode = SpriteDrawMode.Simple;
+            chipRenderer.color = new Color(0.04f, 0.05f, 0.09f, 0.8f);
+            // Above the pipe sections (5) but below the bird (10).
+            chipRenderer.sortingOrder = 6;
+
+            GameObject labelGo = new GameObject("NoteLetter", typeof(RectTransform));
+            labelGo.transform.SetParent(gapTrigger, false);
+            labelGo.transform.localPosition = new Vector3(0f, 0f, -0.2f);
+            labelGo.transform.localScale = Vector3.one;
+
+            RectTransform rect = (RectTransform)labelGo.transform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(1.35f, 0.95f);
+
+            TextMeshPro label = labelGo.AddComponent<TextMeshPro>();
+            TMP_FontAsset font = ResolveFont();
+            if (font != null)
+            {
+                label.font = font;
+            }
+            label.text = "A";
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.alignment = TextAlignmentOptions.Center;
+            label.fontStyle = FontStyles.Bold;
+            label.color = Color.white;
+            label.raycastTarget = false;
+            // Auto-size against the fixed rect so a letter or an accidental "A#" always fits,
+            // without depending on the default font asset's sampling point size.
+            label.fontSize = 14f;
+            label.fontSizeMin = 3f;
+            label.fontSizeMax = 16f;
+            label.enableAutoSizing = true;
+            label.sortingOrder = 7;
+            return label;
         }
 
         // Pipe.Setup sizes each section purely through localScale, so the section must stay a
@@ -343,6 +424,25 @@ namespace FlappyVoice.Editor
                 new Vector2(900f, 50f));
             hint.color = new Color(1f, 0.78f, 0.4f, 1f);
 
+            GameObject singGroupGo = NewUI("SingToStart", root.transform);
+            Stretch(singGroupGo);
+            CanvasGroup singGroup = singGroupGo.AddComponent<CanvasGroup>();
+            singGroup.interactable = false;
+            singGroup.blocksRaycasts = false;
+
+            GameObject singPlate = NewUI("Plate", singGroupGo.transform);
+            Place(singPlate, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 330f),
+                new Vector2(920f, 260f));
+
+            Image singBackdrop = NewImage("Backdrop", singPlate.transform, new Color(0f, 0f, 0f, 0.62f));
+            Stretch(singBackdrop.gameObject);
+
+            TextMeshProUGUI singLabel = NewText("SingToStartLabel", singPlate.transform, "Sing to start", 110f,
+                TextAlignmentOptions.Center);
+            Stretch(singLabel.gameObject);
+            singLabel.fontStyle = FontStyles.Bold;
+            singLabel.characterSpacing = 4f;
+
             SerializedObject so = new SerializedObject(hud);
             SetRef(so, "scoreGroup", scoreGroup);
             SetRef(so, "scoreLabel", scoreLabel);
@@ -350,13 +450,20 @@ namespace FlappyVoice.Editor
             SetRef(so, "micLevelFill", fill);
             SetRef(so, "micGateMarker", gateRect);
             SetRef(so, "micHintLabel", hint);
+            SetRef(so, "singToStartGroup", singGroup);
+            SetRef(so, "singToStartPulseTarget", (RectTransform)singPlate.transform);
             so.ApplyModifiedPropertiesWithoutUndo();
             return hud;
         }
 
+        // TODO: the meter is built but left INACTIVE on purpose. It is not dead code - the bar was
+        // drawn for the old wrapping octave and needs a redesign for the clamped A-to-A range
+        // before it returns, so the object stays in the scene under an obviously-marked name.
+        private const string PitchMeterObjectName = "PitchMeter (DISABLED TODO)";
+
         private static PitchMeterUI BuildPitchMeter(Transform canvas)
         {
-            GameObject root = NewUI("PitchMeter", canvas);
+            GameObject root = NewUI(PitchMeterObjectName, canvas);
             Place(root, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-48f, 40f),
                 new Vector2(112f, 1150f));
             PitchMeterUI meter = root.AddComponent<PitchMeterUI>();
@@ -384,36 +491,8 @@ namespace FlappyVoice.Editor
                 rect.offsetMax = new Vector2(0f, -1f);
             }
 
-            Image wrapLineTop = NewImage("WrapLineTop", bandGroupGo.transform, Color.white);
-            RectTransform wrapLineTopRect = wrapLineTop.rectTransform;
-            wrapLineTopRect.anchorMin = new Vector2(0f, 1f);
-            wrapLineTopRect.anchorMax = new Vector2(1f, 1f);
-            wrapLineTopRect.pivot = new Vector2(0.5f, 1f);
-            wrapLineTopRect.sizeDelta = new Vector2(16f, 8f);
-            wrapLineTopRect.anchoredPosition = Vector2.zero;
-
-            Image wrapLineBottom = NewImage("WrapLineBottom", bandGroupGo.transform, Color.white);
-            RectTransform wrapLineBottomRect = wrapLineBottom.rectTransform;
-            wrapLineBottomRect.anchorMin = new Vector2(0f, 0f);
-            wrapLineBottomRect.anchorMax = new Vector2(1f, 0f);
-            wrapLineBottomRect.pivot = new Vector2(0.5f, 0f);
-            wrapLineBottomRect.sizeDelta = new Vector2(16f, 8f);
-            wrapLineBottomRect.anchoredPosition = Vector2.zero;
-
-            Image wrapFlashTop = NewImage("WrapFlashTop", bandGroupGo.transform, new Color(1f, 1f, 1f, 0f));
-            RectTransform flashTopRect = wrapFlashTop.rectTransform;
-            flashTopRect.anchorMin = new Vector2(0f, 0.9f);
-            flashTopRect.anchorMax = new Vector2(1f, 1f);
-            flashTopRect.offsetMin = Vector2.zero;
-            flashTopRect.offsetMax = Vector2.zero;
-
-            Image wrapFlashBottom = NewImage("WrapFlashBottom", bandGroupGo.transform, new Color(1f, 1f, 1f, 0f));
-            RectTransform flashBottomRect = wrapFlashBottom.rectTransform;
-            flashBottomRect.anchorMin = new Vector2(0f, 0f);
-            flashBottomRect.anchorMax = new Vector2(1f, 0.1f);
-            flashBottomRect.offsetMin = Vector2.zero;
-            flashBottomRect.offsetMax = Vector2.zero;
-
+            // The wrap seam is gone with the octave wrap, so the seam lines and seam flashes that
+            // marked it are no longer built and PitchMeterUI no longer references them.
             Image indicator = NewImage("Indicator", bandGroupGo.transform, Color.white);
             RectTransform indicatorRect = indicator.rectTransform;
             indicatorRect.anchorMin = new Vector2(0f, 0.5f);
@@ -435,12 +514,12 @@ namespace FlappyVoice.Editor
             SerializedObject so = new SerializedObject(meter);
             SetRef(so, "indicator", indicatorRect);
             SetRef(so, "indicatorGraphic", indicator);
-            SetRef(so, "wrapFlashTop", wrapFlashTop);
-            SetRef(so, "wrapFlashBottom", wrapFlashBottom);
             SetRef(so, "bandGroup", bandGroup);
             SetRef(so, "noteLabel", noteLabel);
             SetRef(so, "statusLabel", statusLabel);
             so.ApplyModifiedPropertiesWithoutUndo();
+
+            root.SetActive(false);
             return meter;
         }
 

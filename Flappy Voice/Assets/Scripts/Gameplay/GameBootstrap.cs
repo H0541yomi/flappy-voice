@@ -34,6 +34,10 @@ namespace FlappyVoice.Gameplay
         [Header("UI")]
         [SerializeField] private ShareService shareService;
         [SerializeField] private HudUI hud;
+
+        // TODO: optional on purpose. The scene keeps "PitchMeter (DISABLED TODO)" present but
+        // inactive until the bar is redesigned for the clamped A-to-A range, and an inactive or
+        // absent meter must not be reported as a broken scene.
         [SerializeField] private PitchMeterUI pitchMeter;
         [SerializeField] private EndScreenUI endScreen;
 
@@ -165,7 +169,6 @@ namespace FlappyVoice.Gameplay
             Collect(ref missing, microphoneInput, nameof(microphoneInput));
             Collect(ref missing, shareService, nameof(shareService));
             Collect(ref missing, hud, nameof(hud));
-            Collect(ref missing, pitchMeter, nameof(pitchMeter));
             Collect(ref missing, endScreen, nameof(endScreen));
 
             if (missing != null)
