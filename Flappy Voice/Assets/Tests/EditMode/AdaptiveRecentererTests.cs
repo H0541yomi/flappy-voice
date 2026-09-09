@@ -4,6 +4,11 @@ using NUnit.Framework;
 
 namespace FlappyVoice.Tests
 {
+    // AdaptiveRecenterer is no longer wired into VoiceHeightSource: the A-to-A mechanic requires the
+    // octave floor to stay exactly on an A, and drifting it would break every pipe's note letter.
+    // The class and these tests are retained unchanged so the behaviour can be revived if the pipe
+    // labelling ever stops depending on the floor. They exercise the retained wrap helper, not the
+    // live clamped mapping.
     public class AdaptiveRecentererTests
     {
         private const float Dt = 1f / 60f;
