@@ -1,21 +1,16 @@
-using FlappyVoice.Audio;
 using FlappyVoice.Gameplay;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace FlappyVoice.UI
 {
     public sealed class HudUI : MonoBehaviour
     {
         [SerializeField] private ScoreManager scoreManager;
-        [SerializeField] private PitchTracker pitchTracker;
         [SerializeField] private GameStateManager stateManager;
 
         [SerializeField] private CanvasGroup scoreGroup;
         [SerializeField] private TextMeshProUGUI scoreLabel;
-        [SerializeField] private CanvasGroup hintGroup;
-        [SerializeField] private TextMeshProUGUI micHintLabel;
 
         [SerializeField] private CanvasGroup singToStartGroup;
         [SerializeField] private RectTransform singToStartPulseTarget;
@@ -23,23 +18,17 @@ namespace FlappyVoice.UI
         [SerializeField] private float singToStartMinAlpha = 0.62f;
         [SerializeField] private float singToStartScaleAmplitude = 0.045f;
 
-        [SerializeField] private float fallbackGateRms = 0.015f;
-
         private static readonly string[] SmallScoreStrings = BuildSmallScoreStrings(128);
 
-        private float gateRms = 0.015f;
         private int renderedScore = int.MinValue;
-        private int renderedAudible = -1;
         private bool subscribed;
         private bool singToStartVisible;
 
-        public void Configure(ScoreManager score, PitchTracker tracker, GameStateManager state)
+        public void Configure(ScoreManager score, GameStateManager state)
         {
             Unsubscribe();
             scoreManager = score;
-            pitchTracker = tracker;
             stateManager = state;
-            RefreshGate();
             if (isActiveAndEnabled)
             {
                 Subscribe();
@@ -50,7 +39,6 @@ namespace FlappyVoice.UI
 
         private void OnEnable()
         {
-            RefreshGate();
             Subscribe();
             RenderScore(scoreManager != null ? scoreManager.Score : 0);
             ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
@@ -100,29 +88,8 @@ namespace FlappyVoice.UI
             subscribed = false;
         }
 
-        private void RefreshGate()
-        {
-            gateRms = fallbackGateRms;
-            if (stateManager != null && stateManager.Config != null)
-            {
-                gateRms = stateManager.Config.AmplitudeGateRms;
-            }
-        }
-
         private void Update()
         {
-            float amplitude = pitchTracker != null ? pitchTracker.Current.Amplitude : 0f;
-
-            int audible = amplitude >= gateRms ? 1 : 0;
-            if (audible != renderedAudible)
-            {
-                renderedAudible = audible;
-                if (micHintLabel != null)
-                {
-                    micHintLabel.enabled = audible == 0;
-                }
-            }
-
             PulseSingToStart();
         }
 
@@ -162,15 +129,9 @@ namespace FlappyVoice.UI
 
         private void ApplyState(GameState state)
         {
-            bool showScore = state == GameState.Playing;
-            bool showHint = state != GameState.GameOver;
             if (scoreGroup != null)
             {
-                scoreGroup.alpha = showScore ? 1f : 0f;
-            }
-            if (hintGroup != null)
-            {
-                hintGroup.alpha = showHint ? 1f : 0f;
+                scoreGroup.alpha = state == GameState.Playing ? 1f : 0f;
             }
 
             singToStartVisible = state == GameState.Attract;

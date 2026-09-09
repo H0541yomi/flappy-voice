@@ -95,7 +95,7 @@ namespace FlappyVoice.Editor
             pitchTracker.SetMicrophoneInput(microphoneInput);
             voiceHeight.Configure(config, pitchTracker);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
-            hud.Configure(scoreManager, pitchTracker, stateManager);
+            hud.Configure(scoreManager, stateManager);
             tunerBar.Configure(config, voiceHeight, pipeSpawner, player, stateManager);
             endScreen.Configure(stateManager, scoreManager, shareService);
 
@@ -334,20 +334,6 @@ namespace FlappyVoice.Editor
             Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -352f),
                 new Vector2(700f, 220f));
 
-            // No level meter: the only thing the player can act on is whether they are audible at
-            // all, and the hint says that in words.
-            GameObject hintGroupGo = NewUI("HintGroup", root.transform);
-            Stretch(hintGroupGo);
-            CanvasGroup hintGroup = hintGroupGo.AddComponent<CanvasGroup>();
-            hintGroup.interactable = false;
-            hintGroup.blocksRaycasts = false;
-
-            TextMeshProUGUI hint = NewText("MicHint", hintGroupGo.transform, "Sing louder - I can't hear you", 36f,
-                TextAlignmentOptions.Center);
-            Place(hint.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 150f),
-                new Vector2(900f, 50f));
-            hint.color = new Color(1f, 0.78f, 0.4f, 1f);
-
             GameObject singGroupGo = NewUI("SingToStart", root.transform);
             Stretch(singGroupGo);
             CanvasGroup singGroup = singGroupGo.AddComponent<CanvasGroup>();
@@ -370,8 +356,6 @@ namespace FlappyVoice.Editor
             SerializedObject so = new SerializedObject(hud);
             SetRef(so, "scoreGroup", scoreGroup);
             SetRef(so, "scoreLabel", scoreLabel);
-            SetRef(so, "hintGroup", hintGroup);
-            SetRef(so, "micHintLabel", hint);
             SetRef(so, "singToStartGroup", singGroup);
             SetRef(so, "singToStartPulseTarget", (RectTransform)singPlate.transform);
             so.ApplyModifiedPropertiesWithoutUndo();

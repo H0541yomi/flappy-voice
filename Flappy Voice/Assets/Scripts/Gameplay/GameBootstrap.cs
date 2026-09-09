@@ -91,7 +91,7 @@ namespace FlappyVoice.Gameplay
 
             if (hud != null)
             {
-                hud.Configure(scoreManager, pitchTracker, stateManager);
+                hud.Configure(scoreManager, stateManager);
             }
 
             if (tunerBar != null)
