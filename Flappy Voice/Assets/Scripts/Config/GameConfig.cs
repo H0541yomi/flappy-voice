@@ -39,6 +39,10 @@ namespace FlappyVoice.Config
         [SerializeField] private float _heightSmoothTimeSec = 0.06f;
         [SerializeField] private float _maxVerticalSpeed = 9f;
 
+        [Header("Flap")]
+        [SerializeField] private float _flapAmplitudeUnits = 0.35f;
+        [SerializeField] private float _flapCyclesPerSec = 2.5f;
+
         public float PipeGapSize => _pipeGapSize;
         public float MinPipeGapSize => _minPipeGapSize;
         public float PipeSpeed => _pipeSpeed;
@@ -68,6 +72,8 @@ namespace FlappyVoice.Config
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
+        public float FlapAmplitudeUnits => _flapAmplitudeUnits;
+        public float FlapCyclesPerSec => _flapCyclesPerSec;
 
         public static GameConfig CreateDefault()
         {
@@ -102,6 +108,8 @@ namespace FlappyVoice.Config
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
+            c._flapAmplitudeUnits = 0.35f;
+            c._flapCyclesPerSec = 2.5f;
 
             c.name = "GameConfig (Default)";
             return c;
