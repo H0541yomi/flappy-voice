@@ -2,7 +2,9 @@
     "name": "FlappyVoice",
     "rootNamespace": "FlappyVoice",
     "references": [
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.UI",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
