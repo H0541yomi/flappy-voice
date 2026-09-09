@@ -96,7 +96,7 @@ namespace FlappyVoice.Editor
             voiceHeight.Configure(config, pitchTracker);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
             hud.Configure(scoreManager, pitchTracker, stateManager);
-            tunerBar.Configure(config, voiceHeight, pipeSpawner, player);
+            tunerBar.Configure(config, voiceHeight, pipeSpawner, player, stateManager);
             endScreen.Configure(stateManager, scoreManager, shareService);
 
             UnityEngine.Object[] candidates =
@@ -334,38 +334,17 @@ namespace FlappyVoice.Editor
             Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -352f),
                 new Vector2(700f, 220f));
 
-            GameObject meterGroupGo = NewUI("MeterGroup", root.transform);
-            Stretch(meterGroupGo);
-            CanvasGroup meterGroup = meterGroupGo.AddComponent<CanvasGroup>();
-            meterGroup.interactable = false;
-            meterGroup.blocksRaycasts = false;
+            // No level meter: the only thing the player can act on is whether they are audible at
+            // all, and the hint says that in words.
+            GameObject hintGroupGo = NewUI("HintGroup", root.transform);
+            Stretch(hintGroupGo);
+            CanvasGroup hintGroup = hintGroupGo.AddComponent<CanvasGroup>();
+            hintGroup.interactable = false;
+            hintGroup.blocksRaycasts = false;
 
-            GameObject meterGo = NewUI("MicMeter", meterGroupGo.transform);
-            Place(meterGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 190f),
-                new Vector2(660f, 46f));
-
-            Image track = NewImage("Track", meterGo.transform, new Color(0f, 0f, 0f, 0.55f));
-            Stretch(track.gameObject);
-
-            Image fill = NewImage("Fill", meterGo.transform, new Color(0.87f, 0.29f, 0.33f, 1f));
-            RectTransform fillRect = fill.rectTransform;
-            fillRect.anchorMin = Vector2.zero;
-            fillRect.anchorMax = new Vector2(0f, 1f);
-            fillRect.pivot = new Vector2(0f, 0.5f);
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
-
-            Image gateMarker = NewImage("GateMarker", meterGo.transform, new Color(1f, 1f, 1f, 0.9f));
-            RectTransform gateRect = gateMarker.rectTransform;
-            gateRect.anchorMin = new Vector2(0.1f, -0.35f);
-            gateRect.anchorMax = new Vector2(0.1f, 1.35f);
-            gateRect.pivot = new Vector2(0.5f, 0.5f);
-            gateRect.sizeDelta = new Vector2(6f, 0f);
-            gateRect.anchoredPosition = Vector2.zero;
-
-            TextMeshProUGUI hint = NewText("MicHint", meterGroupGo.transform, "Sing louder - I can't hear you", 36f,
+            TextMeshProUGUI hint = NewText("MicHint", hintGroupGo.transform, "Sing louder - I can't hear you", 36f,
                 TextAlignmentOptions.Center);
-            Place(hint.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 120f),
+            Place(hint.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 150f),
                 new Vector2(900f, 50f));
             hint.color = new Color(1f, 0.78f, 0.4f, 1f);
 
@@ -391,9 +370,7 @@ namespace FlappyVoice.Editor
             SerializedObject so = new SerializedObject(hud);
             SetRef(so, "scoreGroup", scoreGroup);
             SetRef(so, "scoreLabel", scoreLabel);
-            SetRef(so, "meterGroup", meterGroup);
-            SetRef(so, "micLevelFill", fill);
-            SetRef(so, "micGateMarker", gateRect);
+            SetRef(so, "hintGroup", hintGroup);
             SetRef(so, "micHintLabel", hint);
             SetRef(so, "singToStartGroup", singGroup);
             SetRef(so, "singToStartPulseTarget", (RectTransform)singPlate.transform);
@@ -417,6 +394,9 @@ namespace FlappyVoice.Editor
 
             GameObject root = NewUI("TunerBar", canvas);
             TunerBarUI tuner = root.AddComponent<TunerBarUI>();
+            CanvasGroup rootGroup = root.AddComponent<CanvasGroup>();
+            rootGroup.interactable = false;
+            rootGroup.blocksRaycasts = false;
 
             // Stretched across the full width so the strip never leaves a gap at the screen edges,
             // with only its height authored.
@@ -479,6 +459,7 @@ namespace FlappyVoice.Editor
                 new Vector2(300f, readoutRowHeight));
 
             SerializedObject so = new SerializedObject(tuner);
+            SetRef(so, "rootGroup", rootGroup);
             SetRef(so, "dial", (RectTransform)dialGo.transform);
             SetRef(so, "dialGroup", dialGroup);
             SetRef(so, "safeBand", safeBand.rectTransform);

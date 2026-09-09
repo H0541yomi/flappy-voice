@@ -96,7 +96,7 @@ namespace FlappyVoice.Gameplay
 
             if (tunerBar != null)
             {
-                tunerBar.Configure(config, voiceHeightSource, pipeSpawner, player);
+                tunerBar.Configure(config, voiceHeightSource, pipeSpawner, player, stateManager);
             }
 
             if (endScreen != null)

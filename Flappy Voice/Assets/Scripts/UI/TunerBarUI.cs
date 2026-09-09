@@ -32,7 +32,9 @@ namespace FlappyVoice.UI
         [SerializeField] private GameConfig config;
         [SerializeField] private PipeSpawner pipeSpawner;
         [SerializeField] private PlayerController player;
+        [SerializeField] private GameStateManager stateManager;
 
+        [SerializeField] private CanvasGroup rootGroup;
         [SerializeField] private RectTransform dial;
         [SerializeField] private CanvasGroup dialGroup;
         [SerializeField] private TMP_Text[] noteLabels = new TMP_Text[NoteSlotCount];
@@ -68,20 +70,75 @@ namespace FlappyVoice.UI
         private int renderedSafe = -1;
         private bool renderedSafeBandVisible = true;
         private bool renderedVoiced = true;
+        private bool subscribed;
 
         public void Configure(GameConfig gameConfig, VoiceHeightSource voice, PipeSpawner spawner,
-            PlayerController playerController)
+            PlayerController playerController, GameStateManager state)
         {
+            Unsubscribe();
             config = gameConfig;
             voiceSource = voice;
             pipeSpawner = spawner;
             player = playerController;
+            stateManager = state;
             InvalidateRendered();
+
+            if (isActiveAndEnabled)
+            {
+                Subscribe();
+            }
+
+            ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
         }
 
         private void OnEnable()
         {
             InvalidateRendered();
+            Subscribe();
+            ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
+        }
+
+        private void OnDisable()
+        {
+            Unsubscribe();
+        }
+
+        private void OnDestroy()
+        {
+            Unsubscribe();
+        }
+
+        private void Subscribe()
+        {
+            if (subscribed || stateManager == null)
+            {
+                return;
+            }
+
+            subscribed = true;
+            stateManager.OnStateChanged += ApplyState;
+        }
+
+        private void Unsubscribe()
+        {
+            if (!subscribed || stateManager == null)
+            {
+                return;
+            }
+
+            subscribed = false;
+            stateManager.OnStateChanged -= ApplyState;
+        }
+
+        // Nothing on the strip means anything before the range is anchored - there is no floor, so
+        // no note has a height and no gap has a band of safe notes - and it would compete with the
+        // "Sing to start" prompt for the player's attention. It appears with the run.
+        private void ApplyState(GameState state)
+        {
+            if (rootGroup != null)
+            {
+                rootGroup.alpha = state == GameState.Attract ? 0f : 1f;
+            }
         }
 
         private void Update()
