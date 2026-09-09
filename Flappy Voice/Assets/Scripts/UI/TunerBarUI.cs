@@ -61,10 +61,6 @@ namespace FlappyVoice.UI
         // interned up front rather than formatted on a frame where the note drifts.
         private static readonly string[] CentsStrings = BuildCentsStrings();
 
-        // Last pitch the dial was positioned by. The band is drawn against the same value while the
-        // player is silent, so band and letters cannot drift apart.
-        private float lastVoicedMidi = -1f;
-
         private int renderedNearestMidi = int.MinValue;
         private int renderedNoteReadoutMidi = int.MinValue;
         private int renderedCents = int.MinValue;
@@ -97,14 +93,9 @@ namespace FlappyVoice.UI
             if (!voiced)
             {
                 // The dial is left exactly where the last sung note put it: snapping it back to a
-                // default note would read as the player having sung that note. The band carries on
-                // being drawn against that same position - which notes clear the gap ahead is a
-                // fact about the pipe, and it is most useful to a player who has not sung yet.
-                RenderSafeBand(lastVoicedMidi, false);
+                // default note would read as the player having sung that note.
                 return;
             }
-
-            lastVoicedMidi = midi;
 
             int nearest = PitchMath.RoundToSemitone(midi);
             float cents = PitchMath.CentsFromNearestSemitone(midi);
@@ -127,7 +118,7 @@ namespace FlappyVoice.UI
             }
 
             RenderLabels(nearest);
-            RenderSafeBand(midi, true);
+            RenderSafeBand(midi);
             RenderReadouts(nearest, cents);
         }
 
@@ -171,11 +162,9 @@ namespace FlappyVoice.UI
 
         // Positioned against the needle rather than on the sliding dial: the band is a statement
         // about pitch, and the pitch it is compared against is whatever the needle is pointing at.
-        // `voiced` only decides whether the needle is allowed to call itself safe - a silent player
-        // is not clearing anything, however well the last note they sang lines up.
-        private void RenderSafeBand(float midi, bool voiced)
+        private void RenderSafeBand(float midi)
         {
-            if (midi < 0f || !TrySafeWindow(out float lowMidi, out float highMidi))
+            if (!TrySafeWindow(out float lowMidi, out float highMidi))
             {
                 SetSafeBandVisible(false);
                 RenderNeedleSafety(false);
@@ -192,7 +181,7 @@ namespace FlappyVoice.UI
                 safeBand.sizeDelta = new Vector2((highMidi - lowMidi) * px, safeBand.sizeDelta.y);
             }
 
-            RenderNeedleSafety(voiced && midi >= lowMidi && midi <= highMidi);
+            RenderNeedleSafety(midi >= lowMidi && midi <= highMidi);
         }
 
         private bool TrySafeWindow(out float lowMidi, out float highMidi)
@@ -286,6 +275,7 @@ namespace FlappyVoice.UI
 
             renderedCents = int.MinValue;
             renderedSafe = -1;
+            SetSafeBandVisible(false);
             if (needle != null) needle.color = offTuneColor;
             if (noteReadout != null) noteReadout.SetText(SilentNoteText);
             if (centsReadout != null) centsReadout.SetText(SilentCentsText);
@@ -294,7 +284,6 @@ namespace FlappyVoice.UI
 
         private void InvalidateRendered()
         {
-            lastVoicedMidi = -1f;
             renderedNearestMidi = int.MinValue;
             renderedNoteReadoutMidi = int.MinValue;
             renderedCents = int.MinValue;
