@@ -99,14 +99,16 @@ namespace FlappyVoice.Tests
         [TestCase(47f, 45f)]    // B2
         [TestCase(51f, 45f)]    // D#3 -> floor A2, ceiling A3
         [TestCase(55f, 45f)]    // G3
-        [TestCase(56.5f, 45f)]  // just under A3
+        [TestCase(56.4f, 45f)]  // more than 50 cents under A3 -> still A2
+        [TestCase(56.5f, 57f)]  // within 50 cents of A3 -> treated as A3
         [TestCase(57f, 57f)]    // A3 itself
         [TestCase(60f, 57f)]    // C4
         [TestCase(66f, 57f)]    // F#4
-        [TestCase(68.5f, 57f)]  // just under A4
+        [TestCase(68.4f, 57f)]  // more than 50 cents under A4 -> still A3
+        [TestCase(68.5f, 69f)]  // within 50 cents of A4 -> treated as A4
         [TestCase(69f, 69f)]    // A4 itself
         [TestCase(74f, 69f)]    // D5
-        public void Anchoring_SnapsFloorToNearestAAtOrBelow(float sungMidi, float expectedFloor)
+        public void Anchoring_SnapsFloorToAn_A_WithinFiftyCents(float sungMidi, float expectedFloor)
         {
             var anchor = AnchorAtMidi(sungMidi);
 
@@ -132,14 +134,16 @@ namespace FlappyVoice.Tests
         [Test]
         public void Anchoring_FirstSungNoteIsInsideRange_WhenInsideVocalClamp()
         {
-            // The floor is the A at or below the note, so the note itself always maps inside [0,1].
+            // A note within 50 cents of an A is treated as that A, so the first note can sit up to
+            // half a semitone BELOW the floor. Clamping absorbs that: the bird starts on the floor
+            // rather than an octave adrift, which is the failure this tolerance exists to prevent.
             for (float midi = 45f; midi <= 77f; midi += 0.5f)
             {
                 var anchor = AnchorAtMidi(midi);
                 float height = PitchMath.ClampToOctaveHeight(midi, anchor.FloorMidi, 12);
                 Assert.That(height, Is.GreaterThanOrEqualTo(0f));
                 Assert.That(height, Is.LessThanOrEqualTo(1f));
-                Assert.That(midi - anchor.FloorMidi, Is.GreaterThanOrEqualTo(-0.01f));
+                Assert.That(midi - anchor.FloorMidi, Is.GreaterThanOrEqualTo(-0.51f));
                 Assert.That(midi - anchor.FloorMidi, Is.LessThan(12.01f));
             }
         }
@@ -210,8 +214,11 @@ namespace FlappyVoice.Tests
             anchor.SetFloorMidi(45f); // already an A -> unchanged
             Assert.That(anchor.FloorMidi, Is.EqualTo(45f).Within(0.01f));
 
-            anchor.SetFloorMidi(56.9f);
+            anchor.SetFloorMidi(56.4f); // more than 50 cents under A3
             Assert.That(anchor.FloorMidi, Is.EqualTo(45f).Within(0.01f));
+
+            anchor.SetFloorMidi(56.9f); // within 50 cents of A3
+            Assert.That(anchor.FloorMidi, Is.EqualTo(57f).Within(0.01f));
 
             anchor.SetFloorMidi(69f);
             Assert.That(anchor.FloorMidi, Is.EqualTo(69f).Within(0.01f));

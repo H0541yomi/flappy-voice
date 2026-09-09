@@ -7,7 +7,7 @@ namespace FlappyVoice.Config
     {
         [Header("Pipes")]
         [SerializeField] private float _pipeGapSize = 3.2f;
-        [SerializeField] private float _minPipeGapSize = 2.1f;
+        [SerializeField] private float _minPipeGapSize = 2.6f;
         [SerializeField] private float _pipeSpeed = 3f;
         [SerializeField] private float _maxPipeSpeed = 5.5f;
         [SerializeField] private float _spawnIntervalSec = 2f;
@@ -40,7 +40,7 @@ namespace FlappyVoice.Config
         [SerializeField] private float _maxVerticalSpeed = 9f;
 
         [Header("Flap")]
-        [SerializeField] private float _flapAmplitudeUnits = 0.35f;
+        [SerializeField] private float _flapAmplitudeUnits = 0.16f;
         [SerializeField] private float _flapCyclesPerSec = 2.5f;
 
         public float PipeGapSize => _pipeGapSize;
@@ -80,7 +80,7 @@ namespace FlappyVoice.Config
             GameConfig c = CreateInstance<GameConfig>();
 
             c._pipeGapSize = 3.2f;
-            c._minPipeGapSize = 2.1f;
+            c._minPipeGapSize = 2.6f;
             c._pipeSpeed = 3f;
             c._maxPipeSpeed = 5.5f;
             c._spawnIntervalSec = 2f;
@@ -108,7 +108,7 @@ namespace FlappyVoice.Config
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
-            c._flapAmplitudeUnits = 0.35f;
+            c._flapAmplitudeUnits = 0.16f;
             c._flapCyclesPerSec = 2.5f;
 
             c.name = "GameConfig (Default)";

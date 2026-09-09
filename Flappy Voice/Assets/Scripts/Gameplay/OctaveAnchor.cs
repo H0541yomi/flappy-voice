@@ -81,7 +81,10 @@ namespace FlappyVoice.Gameplay
 
         public void SetFloorMidi(float midi)
         {
-            FloorMidi = ClampAToVocalRange(PitchMath.NearestAFloorAtOrBelow(midi));
+            // Round up by a half semitone first: a first note detected a few cents flat of an A is
+            // still that A, and snapping strictly downward would drop the floor a whole octave and
+            // pin the singer's entire range to the top of the screen.
+            FloorMidi = ClampAToVocalRange(PitchMath.NearestAFloorAtOrBelow(midi + 0.5f));
             IsAnchored = true;
         }
 

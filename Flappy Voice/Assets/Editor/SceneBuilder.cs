@@ -20,6 +20,8 @@ namespace FlappyVoice.Editor
         private const string ScenesFolder = "Assets/Scenes";
         private const string ScenePath = "Assets/Scenes/Game.unity";
         private const string SettingsFolder = "Assets/Settings";
+        private const float EdgeNoteMarginUnits = 1f;
+
         private const string ConfigPath = "Assets/Settings/GameConfig.asset";
         private const string PrefabsFolder = "Assets/Prefabs";
         private const string PipePrefabPath = "Assets/Prefabs/Pipe.prefab";
@@ -91,9 +93,7 @@ namespace FlappyVoice.Editor
 
             pitchTracker.Configure(config);
             pitchTracker.SetMicrophoneInput(microphoneInput);
-            pipeSpawner.Configure(config, stateManager);
             voiceHeight.Configure(config, pitchTracker);
-            attractPilot.Configure(config, pipeSpawner);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
             hud.Configure(scoreManager, pitchTracker, stateManager);
             pitchMeter.Configure(voiceHeight, pitchTracker);
@@ -186,7 +186,9 @@ namespace FlappyVoice.Editor
             float maxY = config.PlayfieldMaxY;
             float centerY = (minY + maxY) * 0.5f;
             camera.orthographic = true;
-            camera.orthographicSize = Mathf.Max(1f, (maxY - minY) * 0.5f);
+            // Edge notes put a gap centre right on the playfield bound, so keep a margin or offsets 0
+            // and 12 land on the screen edge with half the gap and half the note letter cut off.
+            camera.orthographicSize = Mathf.Max(1f, (maxY - minY) * 0.5f + EdgeNoteMarginUnits);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = SkyColor;
             camera.nearClipPlane = 0.1f;
