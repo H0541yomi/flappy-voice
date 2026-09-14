@@ -29,6 +29,22 @@ namespace FlappyVoice.Platform
         // rather than "no", so the caller should ask again after a tap.
         public static bool RetriesOnUserGesture => IsWeb;
 
+        // Whether the player has agreed on THIS boot, which is not the same question as
+        // HasPermission. The grant outlives the run - iOS and Android remember it across launches
+        // and a browser can remember it across visits - so HasPermission may already be true
+        // before the player has agreed to anything this time. Consent is per boot, so this is what
+        // the early-out below hangs off, and what anything deciding to show the feed should read.
+        public static bool GrantedThisSession { get; private set; }
+
+        // Runs before the first scene loads on every boot, so the flag cannot start stale. Also
+        // runs on every Editor Play even with Reload Domain turned off, which is the one way a
+        // static could otherwise carry a grant over from the previous Play session.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetForNewSession()
+        {
+            GrantedThisSession = false;
+        }
+
         public static bool HasPermission
         {
             get
@@ -47,7 +63,10 @@ namespace FlappyVoice.Platform
 
         public static IEnumerator RequestRoutine(Action<bool> onResult)
         {
-            if (HasPermission)
+            // Both halves matter: the session flag keeps a remembered grant from standing in for
+            // the player's agreement this boot, and HasPermission catches a grant revoked in
+            // browser or OS settings midway through the run.
+            if (GrantedThisSession && HasPermission)
             {
                 onResult?.Invoke(true);
                 yield break;
@@ -78,7 +97,10 @@ namespace FlappyVoice.Platform
                 }
             }
 
-            onResult?.Invoke(HasPermission);
+            // Latched here rather than at the tap: the tap is only a request, and a prompt the
+            // player ignored until the timeout is not a grant.
+            GrantedThisSession = HasPermission;
+            onResult?.Invoke(GrantedThisSession);
         }
 
         // Hands back the device name to open, or null if none arrived in time. Call only after a
@@ -92,7 +114,7 @@ namespace FlappyVoice.Platform
                 WebCamDevice[] devices = WebCamTexture.devices;
                 if (devices != null && devices.Length > 0)
                 {
-                    onResult?.Invoke(PickFrontFacing(devices));
+                    onResult?.Invoke(PickDevice(devices));
                     yield break;
                 }
 
@@ -103,20 +125,18 @@ namespace FlappyVoice.Platform
         }
 
         // Opening WebCamTexture with no name takes the browser's default, which on most phones is
-        // the rear camera — a selfie background pointed at the floor.
-        private static string PickFrontFacing(WebCamDevice[] devices)
+        // the rear camera - a selfie background pointed at the floor. The policy itself is in
+        // CameraDeviceChoice; this only translates Unity's struct into it.
+        private static string PickDevice(WebCamDevice[] devices)
         {
-            for (int i = 0; i < devices.Length; i++)
+            CameraDeviceInfo[] candidates = new CameraDeviceInfo[devices.Length];
+            for (int index = 0; index < devices.Length; index++)
             {
-                if (devices[i].isFrontFacing)
-                {
-                    return devices[i].name;
-                }
+                candidates[index] = new CameraDeviceInfo(devices[index].name,
+                    devices[index].isFrontFacing);
             }
 
-            // Desktop browsers report isFrontFacing false for a laptop's built-in camera, so a
-            // list with no front-facing entry still means "use what there is", not "give up".
-            return devices[0].name;
+            return CameraDeviceChoice.Pick(candidates);
         }
     }
 }
