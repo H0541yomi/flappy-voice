@@ -30,12 +30,12 @@ Material:
     m_TexEnvs:
     - _BaseMap:
         m_Texture: {fileID: 0}
-        m_Scale: {x: -1, y: 0.75}
-        m_Offset: {x: 1, y: 0.125}
+        m_Scale: {x: -0.4219251, y: 1}
+        m_Offset: {x: 0.71096253, y: 0}
     - _MainTex:
         m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
+        m_Scale: {x: -0.4219251, y: 1}
+        m_Offset: {x: 0.71096253, y: 0}
     m_Ints: []
     m_Floats:
     - _AddPrecomputedVelocity: 0

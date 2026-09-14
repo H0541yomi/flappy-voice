@@ -67,10 +67,15 @@ The Web player is the shipping target (Variant renders the game as a web build).
 **Flappy Voice → Build Web Player**, or headlessly:
 
 ```sh
-/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode -nographics -projectPath . \
+UNITY="$(Tools/unity-path.sh)"
+"$UNITY" -batchmode -nographics -projectPath . \
   -executeMethod FlappyVoice.Editor.WebBuilder.BuildWeb -quit -logFile /tmp/web.log
 ```
+
+`Tools/unity-path.sh` finds the editor the project pins (`ProjectSettings/ProjectVersion.txt`)
+wherever the Hub put it — the install root differs per OS, and is under `~` rather than
+`/Applications` when the Hub was installed without admin rights. `UNITY_PATH=/path/to/binary`
+overrides the search.
 
 Output lands in `Build/Web` (Brotli, with the decompression fallback on so it works on hosts that
 serve the files without a `Content-Encoding` header).
@@ -101,8 +106,8 @@ is pure functions, deliberately.
 ```sh
 # in the Editor: Window → General → Test Runner → EditMode → Run All
 # headless:
-/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode -nographics -projectPath . \
+UNITY="$(Tools/unity-path.sh)"
+"$UNITY" -batchmode -nographics -projectPath . \
   -runTests -testPlatform EditMode -testResults /tmp/results.xml -logFile /tmp/unity.log
 ```
 
@@ -126,13 +131,13 @@ The rest: `PitchMathTests` (continuous pitch → height, no snapping), `OctaveAn
 Both sets are **placeholders with real hooks** — the game is fully playable and audible, and
 swapping in final assets is a file drop plus import settings, no code.
 
-- **Audio** — `Tools/make-placeholder-audio.py` synthesises the three clips in `Assets/Audio`
+- **Audio** — `Tools/make-placeholder-audio.py` synthesises the two clips in `Assets/Audio`
   (stdlib only, no ffmpeg needed). Re-run it after editing the script:
   ```sh
   python3 Tools/make-placeholder-audio.py
   ```
-  Real files go onto `GameAudio`'s three clip fields. There is deliberately no music during attract
-  or a run — the mic is open the whole time — so only the game-over bed and the two one-shots exist.
+  Real files go onto `GameAudio`'s two clip fields. There is deliberately no music anywhere — the
+  mic is open the whole time the game is on screen — so the two one-shots are all there is.
 - **Art** — the bird, trumpets, parallax scenery, note FX, tuner chrome and the two parchment
   panels are real art, loaded by path from `Assets/Art/{Bird,Trumpets,Bg,Fx,Ui}`. Raw generations
   land in `Assets/Art/images/` on flat magenta; `python3 Tools/key-ui-art.py` keys, despills, trims

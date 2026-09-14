@@ -43,8 +43,8 @@ def envelope(i, count, attack, decay, sustain_level, release):
 
 
 def triangle(phase):
-    # Softer than a square and far softer than a saw: placeholder music has to
-    # survive being looped for minutes without becoming abrasive.
+    # Softer than a square and far softer than a saw: enough body for the crash
+    # honk without the buzz a saw would put on every collision.
     p = phase % 1.0
     return 4.0 * abs(p - 0.5) - 1.0
 
@@ -141,32 +141,7 @@ def crash():
     write_wav("sfx_crash.wav", buf)
 
 
-# --------------------------------------------------------- music: game over
-
-def bgm_gameover():
-    """Two slow bars, A minor, falling. Loops, but is meant to be short-lived."""
-    bpm = 76.0
-    beat = 60.0 / bpm
-    total = 2 * 4 * beat
-    buf = buffer(total)
-
-    for bar, root in enumerate((33, 28)):
-        add_tone(buf, bar * 4 * beat, 4 * beat, midi_hz(root), 0.32, triangle,
-                 attack=0.03, decay=0.6, sustain=0.5, release=0.5)
-
-    # Am triad falling into E: the cadence does the "you lost" work.
-    for at, midi, dur in (
-        (0.0, 72, 1.6), (1.5, 69, 1.4), (3.0, 64, 1.0),
-        (4.0, 68, 1.8), (5.6, 64, 2.2),
-    ):
-        add_tone(buf, at * beat, dur * beat, midi_hz(midi), 0.19, sine,
-                 attack=0.02, decay=0.35, sustain=0.4, release=0.45)
-
-    write_wav("bgm_gameover.wav", buf)
-
-
 if __name__ == "__main__":
     os.makedirs(OUT_DIR, exist_ok=True)
     score()
     crash()
-    bgm_gameover()

@@ -48,17 +48,24 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private TunerBarUI tunerBar;
         [SerializeField] private Camera viewCamera;
         [SerializeField] private EndScreenUI endScreen;
+        // ConsentFlowUI asks for no permission of its own: it raises OnMicrophoneRequest /
+        // OnCameraRequest on the frame of the tap, and the routines below do the asking, still
+        // inside that tap. This reference is what they subscribe on.
+        [SerializeField] private ConsentFlowUI consentFlow;
+        // The answer to the ask above, when it does not arrive. Raised from the microphone
+        // routine rather than from the panel, because only the routine knows the grant failed.
+        [SerializeField] private MicrophoneNoticeUI microphoneNotice;
+        [SerializeField] private QuitButtonUI quitButton;
 
         [Header("Background")]
         [SerializeField] private WebCam webCamBackground;
 
-        [Header("Startup")]
-        [SerializeField] private bool requestMicrophoneOnStart = true;
-        [SerializeField] private bool requestCameraOnStart = true;
-
         private readonly WaitForSeconds micPollDelay = new WaitForSeconds(0.25f);
         private readonly WaitForSeconds micRetryDelay = new WaitForSeconds(0.5f);
         private readonly WaitForSeconds cameraRetryDelay = new WaitForSeconds(0.5f);
+
+        private bool microphoneRoutineRunning;
+        private bool microphoneNoticeShown;
 
         private void Awake()
         {
@@ -116,7 +123,7 @@ namespace FlappyVoice.Gameplay
 
             if (webCamBackground != null)
             {
-                webCamBackground.Configure(viewCamera);
+                webCamBackground.Configure(viewCamera, config);
             }
 
             if (scoreManager != null)
@@ -154,18 +161,101 @@ namespace FlappyVoice.Gameplay
             {
                 endScreen.Configure(stateManager, scoreManager, shareService);
             }
-        }
 
-        private void Start()
-        {
-            if (requestMicrophoneOnStart)
+            if (microphoneNotice != null)
             {
-                StartCoroutine(StartMicrophoneRoutine());
+                microphoneNotice.Configure(hud);
+                microphoneNotice.OnDismissed += RequestMicrophone;
+            }
+
+            if (quitButton != null)
+            {
+                quitButton.Configure(stateManager);
+            }
+
+            if (consentFlow != null)
+            {
+                consentFlow.Configure(hud);
+                consentFlow.OnMicrophoneRequest += RequestMicrophone;
+                consentFlow.OnCameraRequest += RequestCamera;
             }
         }
 
-        // Runs as a coroutine so attract mode keeps playing behind the OS permission prompt
-        // (PRD 11) and the first attract -> play transition is never blocked on a modal wait.
+        // Subscribing handed ConsentFlowUI a reference to this object, and it outlives a scene
+        // change, so the pair has to be undone or the panel would call into a destroyed bootstrap.
+        // Both are named methods rather than lambdas for exactly this reason - there is nothing
+        // for -= to match on an anonymous one.
+        private void OnDestroy()
+        {
+            if (consentFlow != null)
+            {
+                consentFlow.OnMicrophoneRequest -= RequestMicrophone;
+                consentFlow.OnCameraRequest -= RequestCamera;
+            }
+
+            if (microphoneNotice != null)
+            {
+                microphoneNotice.OnDismissed -= RequestMicrophone;
+            }
+        }
+
+        // Tiny stub to start camera routine, writing this lets the consent flow UI unsubscribe later.
+        private void RequestCamera()
+        {
+            StartCoroutine(StartCameraRoutine());
+        }
+
+        // Tiny stub to start microphone routine, writing this lets the consent flow UI unsubscribe later.
+        //
+        // Two callers now - the consent panel's OK and the notice's dismiss - so it guards against
+        // a second loop: on the web the routine retries forever, and a second one would double the
+        // request rate against the plugin's own attempt budget. The guard is also what makes the
+        // notice show once per deliberate ask rather than once per failed poll.
+        private void RequestMicrophone()
+        {
+            if (microphoneRoutineRunning)
+            {
+                return;
+            }
+            microphoneRoutineRunning = true;
+            microphoneNoticeShown = false;
+            StartCoroutine(MicrophoneRoutine());
+        }
+
+        private IEnumerator MicrophoneRoutine()
+        {
+            yield return StartMicrophoneRoutine();
+            microphoneRoutineRunning = false;
+        }
+
+        // Deferred rather than shown outright: this is raised while the consent flow may still be
+        // on its camera step, and the two are the same parchment. Stacking them reads as one
+        // broken sign, so the notice waits its turn.
+        private IEnumerator ShowMicrophoneNoticeRoutine()
+        {
+            while (consentFlow != null && consentFlow.IsShowing)
+            {
+                yield return null;
+            }
+            if (microphoneNotice != null)
+            {
+                microphoneNotice.Show();
+            }
+        }
+
+        // Fire-and-forget so the retry loop above keeps polling while the notice waits out the
+        // consent flow; the flag makes every pass after the first a no-op.
+        private void ReportMicrophoneMissing()
+        {
+            if (microphoneNoticeShown || microphoneNotice == null)
+            {
+                return;
+            }
+            microphoneNoticeShown = true;
+            StartCoroutine(ShowMicrophoneNoticeRoutine());
+        }
+
+        // Requests Microphone permissions in the browser.
         private IEnumerator StartMicrophoneRoutine()
         {
             if (microphoneInput == null)
@@ -192,14 +282,14 @@ namespace FlappyVoice.Gameplay
 
                     if (microphoneInput.DeviceCount > 0 && microphoneInput.TryStartRecording())
                     {
+                        // Nothing about the camera here. The two grants are independent: the
+                        // consent panel asks for each one separately and each tap is its own user
+                        // gesture, so chaining the camera onto a microphone grant would spend a
+                        // prompt the player has not agreed to yet.
                         SetStartHint(null);
-                        // Only now, and never bundled into one getUserMedia with the microphone:
-                        // a combined prompt is all-or-nothing, so a player who simply does not
-                        // want their face on screen would lose the microphone and the game with
-                        // it. Two prompts, mic first, is the cheaper trade.
-                        if (requestCameraOnStart)
+                        if (microphoneNotice != null)
                         {
-                            StartCoroutine(StartCameraRoutine());
+                            microphoneNotice.Hide();
                         }
                         yield break;
                     }
@@ -209,6 +299,7 @@ namespace FlappyVoice.Gameplay
                 {
                     Debug.LogWarning("[GameBootstrap] Microphone unavailable; staying in attract mode.");
                     SetStartHint(MicBlockedHint);
+                    ReportMicrophoneMissing();
                     yield break;
                 }
 
@@ -216,6 +307,7 @@ namespace FlappyVoice.Gameplay
                 // and this game reads no input at all, so ask for the tap that the jslib bridge is
                 // already listening for and try again once it has had one.
                 SetStartHint(MicTapHint);
+                ReportMicrophoneMissing();
                 yield return micRetryDelay;
             }
         }
@@ -226,6 +318,15 @@ namespace FlappyVoice.Gameplay
         {
             if (webCamBackground == null)
             {
+                yield break;
+            }
+
+            // The dev toggle has to stop the prompt, not just the drawing: asking for a camera
+            // you have already decided not to show is the one part a player would notice, and on
+            // the browser a refusal then sticks.
+            if (config != null && !config.UseCameraBackground)
+            {
+                Debug.Log("[GameBootstrap] UseCameraBackground is off in GameConfig; the painted sky stays.");
                 yield break;
             }
 
@@ -288,6 +389,9 @@ namespace FlappyVoice.Gameplay
             Collect(ref missing, tunerBar, nameof(tunerBar));
             Collect(ref missing, viewCamera, nameof(viewCamera));
             Collect(ref missing, endScreen, nameof(endScreen));
+            Collect(ref missing, consentFlow, nameof(consentFlow));
+            Collect(ref missing, microphoneNotice, nameof(microphoneNotice));
+            Collect(ref missing, quitButton, nameof(quitButton));
 
             if (missing != null)
             {

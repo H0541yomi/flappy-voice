@@ -3,28 +3,24 @@ using UnityEngine;
 
 namespace FlappyVoice.Audio
 {
-    // Every audible event in the game, in one place: two one-shots and a game-over bed. The clips
+    // Every audible event in the game, in one place: two one-shots, and nothing else. The clips
     // in Assets/Audio are synthesised placeholders (Tools/make-placeholder-audio.py) - dropping
-    // real files onto these three fields is the whole swap, no code involved.
+    // real files onto these two fields is the whole swap, no code involved.
     //
-    // There is deliberately NO music during attract or a run. The game listens to the microphone
-    // the whole time it is on screen, so anything coming out of the speaker feeds straight back
-    // into the pitch detector. Music only plays once the run is over and the mic no longer steers
-    // anything.
+    // There is deliberately NO music anywhere, not even on the game-over screen. The game listens
+    // to the microphone the whole time it is on screen, so anything coming out of the speaker
+    // feeds straight back into the pitch detector.
     public sealed class GameAudio : MonoBehaviour
     {
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private ScoreManager scoreManager;
         [SerializeField] private LivesManager livesManager;
 
-        [SerializeField] private AudioSource musicSource;
         [SerializeField] private AudioSource sfxSource;
 
-        [SerializeField] private AudioClip gameOverMusic;
         [SerializeField] private AudioClip scoreSfx;
         [SerializeField] private AudioClip crashSfx;
 
-        [SerializeField, Range(0f, 1f)] private float musicVolume = 0.4f;
         [SerializeField, Range(0f, 1f)] private float sfxVolume = 0.85f;
 
         private int lastScore;
@@ -93,17 +89,9 @@ namespace FlappyVoice.Audio
 
         private void ApplyState(GameState state)
         {
-            if (state == GameState.GameOver)
-            {
-                // No crash one-shot here: the hit that ended the run already spent a life, and
-                // HandleLivesChanged sounded it. Firing again would double it on the last hit only.
-                PlayMusic(gameOverMusic);
-                return;
-            }
-
-            // Attract and Playing are silent, so the mic hears the singer and nothing else.
-            StopMusic();
-
+            // Nothing to play on GameOver: the hit that ended the run already spent a life, and
+            // HandleLivesChanged sounded it. Firing the crash again would double it on the last
+            // hit only.
             if (state == GameState.Attract)
             {
                 lastScore = 0;
@@ -135,37 +123,6 @@ namespace FlappyVoice.Audio
             }
 
             lastScore = value;
-        }
-
-        private void PlayMusic(AudioClip clip)
-        {
-            if (musicSource == null || clip == null)
-            {
-                return;
-            }
-
-            // Restarting a track that is already the right one would put a seam in the music at
-            // exactly the moment the player sang, which reads as a glitch rather than a cue.
-            if (musicSource.clip == clip && musicSource.isPlaying)
-            {
-                return;
-            }
-
-            musicSource.clip = clip;
-            musicSource.loop = true;
-            musicSource.volume = musicVolume;
-            musicSource.Play();
-        }
-
-        private void StopMusic()
-        {
-            if (musicSource == null || !musicSource.isPlaying)
-            {
-                return;
-            }
-
-            musicSource.Stop();
-            musicSource.clip = null;
         }
 
         private void PlayOneShot(AudioClip clip)

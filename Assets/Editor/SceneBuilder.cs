@@ -50,15 +50,14 @@ namespace FlappyVoice.Editor
         private const string NeedleSpritePath = "Assets/Art/Ui/needle.png";
         private const string SignSpritePath = "Assets/Art/Ui/start_sign.png";
         private const string ButtonSpritePath = "Assets/Art/Ui/button.png";
+        private const string SmallSignSpritePath = "Assets/Art/Ui/sign_small.png";
+        private const string ButtonPrimarySpritePath = "Assets/Art/Ui/button_primary.png";
+        private const string XButtonSpritePath = "Assets/Art/Ui/x_button.png";
         private const string HeartFullSpritePath = "Assets/Art/Ui/heart_full.png";
         private const string HeartEmptySpritePath = "Assets/Art/Ui/heart_empty.png";
         private const string TitleMaterialPath = "Assets/Art/Ui/SignTitle.mat";
         private const string WebCamMaterialPath = "Assets/Art/Ui/WebCamFeed.mat";
-
-        // Between far (-90) and mid (-80): the two nearest scenery bands frame the feed, and the
-        // sky, clouds and far horizon it covers are exactly the layers there is no point drawing
-        // behind an opaque video.
-        private const int WebCamSortingOrder = -85;
+        private const int WebCamSortingOrder = -65;
 
         // Scenery, back to front: sprite, world Y of the layer's centre, vertical scale, scroll
         // factor against the pipe speed, sorting order. Sky is handled separately - it does not
@@ -104,6 +103,18 @@ namespace FlappyVoice.Editor
         private const float SignFaceTop = 0.219f * (860f * SignAspect);
         private const float SignFaceBottom = 0.812f * (860f * SignAspect);
 
+        // sign_small.png is the same parchment at a squatter aspect, for the consent panels: a
+        // title, a sentence and two buttons would leave the tall sign a third empty. Not
+        // 9-sliced either - its corner flowers smear under a stretch exactly like the tall one's.
+        private const float SmallSignAspect = 1215f / 1024f;
+        private static readonly Vector2 SmallSignSize = new Vector2(820f, 820f * SmallSignAspect);
+
+        // Measured off the sprite the same way as SignFaceTop/Bottom. The leaf clusters cut into
+        // the top-right and bottom-left corners of the face, so content here stays both inside
+        // this band and narrower than the band is wide.
+        private const float SmallSignFaceTop = 0.110f * (820f * SmallSignAspect);
+        private const float SmallSignFaceBottom = 0.928f * (820f * SmallSignAspect);
+
         // The tuner strip is a compact pill at the top-centre, not a full-width bar: at full
         // width it covered the whole top of the screen and the bird disappeared behind it
         // whenever it flew high. These three drive both the strip and the camera - BuildCamera
@@ -123,9 +134,49 @@ namespace FlappyVoice.Editor
 
         // Ink on parchment. White text is invisible on the sign, so nothing placed on one may keep
         // the default NewText colour.
-        private static readonly Color InkColor = new Color(0.21f, 0.24f, 0.33f, 1f);
-        private static readonly Color MutedInkColor = new Color(0.38f, 0.42f, 0.50f, 1f);
-        private static readonly Color ButtonLabelColor = new Color(1f, 0.97f, 0.90f, 1f);
+        // #501713, the ink the signs are drawn in, and a lifted version of it for the quiet lines.
+        // One palette for the whole app: the only text that is NOT ink is the in-run score, which
+        // floats over the playfield rather than sitting on parchment and stays white.
+        private static readonly Color InkColor = new Color(0.314f, 0.090f, 0.075f, 1f);
+        private static readonly Color MutedInkColor = new Color(0.484f, 0.259f, 0.243f, 1f);
+
+        // #FBD97B. Ink on dark timber would be unreadable, so a plaque label is gold instead.
+        private static readonly Color ButtonLabelColor = new Color(0.984f, 0.851f, 0.482f, 1f);
+
+        // Widths and type sizes come across from the design frame by simple ratio: 820 of sign
+        // for its 626.
+        private const float ConsentDesignScale = 820f / 626f;
+
+        // Heights come across as FRACTIONS of the design frame, not as scaled pixels. The design
+        // stretches the parchment to a 1.401 aspect where the sprite's own is 1.187, and it is not
+        // 9-sliced, so matching the design's pixel heights would mean smearing the corner flowers.
+        // The vertical rhythm is preserved, the artwork is not distorted.
+        private const float ConsentTitleCenterFromTop = 0.3255f * (820f * SmallSignAspect);
+        private const float ConsentBodyTopFromTop = 0.4037f * (820f * SmallSignAspect);
+        private const float ConsentButtonRowCenterFromTop = 0.6847f * (820f * SmallSignAspect);
+
+        // The design's button is 228x57, a 4:1 box - which is button.png's own aspect, so the
+        // height is derived from the sprite and both stay true at once.
+        private const float ButtonAspect = 640f / 160f;
+        private static readonly Vector2 ConsentButtonSize =
+            new Vector2(228f * ConsentDesignScale, 228f * ConsentDesignScale / ButtonAspect);
+
+        // The quit button lives in the corner of the SCREEN, so its only neighbour is the tuner
+        // pill: 600 px wide and centred, which leaves it the outer 240 px of a 1080 canvas. The
+        // canvas matches on height, so a narrower phone shrinks that margin rather than the pill -
+        // at 9:19.5, the tightest aspect a phone actually ships, the two still clear by ~38 px.
+        //
+        // It also has to stay clear of the end screen's capture rect, which ShareService fills
+        // with whatever UI-layer graphic falls inside it. The rect stops 1743 px up a 1920 px
+        // canvas and this button starts at 1796, so the shared card keeps it out.
+        private const float QuitButtonSizePx = 88f;
+        private const float QuitButtonMarginPx = 36f;
+
+        // The notice that the microphone never arrived: the same parchment as the consent panels,
+        // one sentence and one plaque, laid out on their vertical rhythm so the two do not appear
+        // to jump when one replaces the other.
+        private const float MicNoticeMessageCenterFromTop = 0.432f * (820f * SmallSignAspect);
+        private static readonly Vector2 MicNoticeMessageSize = new Vector2(620f, 330f);
 
         private static TMP_FontAsset cachedFont;
         private static bool fontResolved;
@@ -190,6 +241,13 @@ namespace FlappyVoice.Editor
             LivesUI livesUI = BuildLivesUI(canvas.transform, config);
             TunerBarUI tunerBar = BuildTunerBar(canvas.transform);
             EndScreenUI endScreen = BuildEndScreen(canvas.transform, camera);
+            // Last, so it is the topmost thing on the canvas: it is the first screen a player
+            // sees and everything else is behind it.
+            ConsentFlowUI consentFlow = BuildConsentFlow(canvas.transform);
+            MicrophoneNoticeUI microphoneNotice = BuildMicrophoneNotice(canvas.transform);
+            // Last of all, so nothing can end up drawn over it - including the consent flow's
+            // full-screen blocking dim, which is the one graphic in the scene that eats taps.
+            QuitButtonUI quitButton = BuildQuitButton(canvas.transform);
 
             pitchTracker.Configure(config);
             pitchTracker.SetMicrophoneInput(microphoneInput);
@@ -202,11 +260,15 @@ namespace FlappyVoice.Editor
             livesUI.Configure(livesManager, stateManager);
             tunerBar.Configure(config, voiceHeight, pipeSpawner, player, stateManager);
             endScreen.Configure(stateManager, scoreManager, shareService);
+            consentFlow.Configure(hud);
+            microphoneNotice.Configure(hud);
+            quitButton.Configure(stateManager);
 
             UnityEngine.Object[] candidates =
             {
                 config, stateManager, scoreManager, livesManager, shareService, microphoneInput, pitchTracker, gameAudio,
                 voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, player, camera, hud, livesUI, tunerBar, endScreen,
+                consentFlow, microphoneNotice, quitButton,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
 
@@ -227,6 +289,9 @@ namespace FlappyVoice.Editor
             AutoWireByType(livesUI, candidates);
             AutoWireByType(tunerBar, candidates);
             AutoWireByType(endScreen, candidates);
+            AutoWireByType(consentFlow, candidates);
+            AutoWireByType(microphoneNotice, candidates);
+            AutoWireByType(quitButton, candidates);
 
             foreach (UnityEngine.Object candidate in candidates)
             {
@@ -243,7 +308,7 @@ namespace FlappyVoice.Editor
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
                 pitchTracker, gameAudio, voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, livesManager, player, camera, hud,
-                livesUI, tunerBar, endScreen);
+                livesUI, tunerBar, endScreen, consentFlow, microphoneNotice, quitButton);
             EditorUtility.SetDirty(bootstrap);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -789,23 +854,19 @@ namespace FlappyVoice.Editor
             return lives;
         }
 
-        // Two sources, not one: the game-over bed is a looping stream, and the one-shots have to be
-        // able to overlap it and each other. Clips are looked up by path rather than passed in, so
-        // adding a real file over a placeholder needs no change here.
+        // One source for both one-shots; PlayOneShot lets them overlap each other. Clips are
+        // looked up by path rather than passed in, so adding a real file over a placeholder needs
+        // no change here.
         private static GameAudio BuildGameAudio(Transform parent)
         {
             GameObject root = new GameObject("GameAudio");
             root.transform.SetParent(parent, false);
             GameAudio audio = root.AddComponent<GameAudio>();
 
-            AudioSource music = NewAudioSource("Music", root.transform);
-            music.loop = true;
             AudioSource sfx = NewAudioSource("Sfx", root.transform);
 
             SerializedObject so = new SerializedObject(audio);
-            SetRef(so, "musicSource", music);
             SetRef(so, "sfxSource", sfx);
-            SetRef(so, "gameOverMusic", LoadClip("bgm_gameover.wav"));
             SetRef(so, "scoreSfx", LoadClip("sfx_score.wav"));
             SetRef(so, "crashSfx", LoadClip("sfx_crash.wav"));
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -1013,6 +1074,187 @@ namespace FlappyVoice.Editor
             }
         }
 
+        // The two permission asks, microphone first, on ONE parchment whose words change with the
+        // step - a second sign would be a second thing to keep in sync and a visible swap as it
+        // replaced the first. Nothing here calls for a permission: the component raises an event
+        // per answer and leaves the asking to whoever subscribes. The panel exists because
+        // getUserMedia needs a user gesture outside desktop Chrome and this game reads no input,
+        // so without a button there is no tap to spend.
+        //
+        // Laid out from the Figma consent panels. Vertical positions are measured from the sign's
+        // top edge and all sit inside SmallSignFaceTop..SmallSignFaceBottom; outside that the
+        // deckled edge is tapering in and content hangs off the parchment.
+        private static ConsentFlowUI BuildConsentFlow(Transform canvas)
+        {
+            GameObject root = NewUI("ConsentFlow", canvas);
+            Stretch(root);
+            ConsentFlowUI consentFlow = root.AddComponent<ConsentFlowUI>();
+
+            GameObject panels = NewUI("Panels", root.transform);
+            Stretch(panels);
+
+            Image dim = NewImage("Dim", panels.transform, new Color(0f, 0f, 0f, 0.55f));
+            Stretch(dim.gameObject);
+            // The one blocking graphic in the scene. The start sign is pulsing underneath, so a
+            // tap that misses a button must be swallowed rather than land on the game.
+            dim.raycastTarget = true;
+
+            GameObject panel = NewUI("Panel", panels.transform);
+            Place(panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, SmallSignSize);
+
+            Image parchment = NewImage("Parchment", panel.transform, new Color(0.93f, 0.88f, 0.74f, 1f));
+            Stretch(parchment.gameObject);
+            ApplySlicedSprite(parchment, SmallSignSpritePath, Color.white);
+
+            // 620 wide on an 820 sign: the leaf cluster in the top-right corner reaches about a
+            // fifth of the way in, and a title sized to the face would run under it. Regular
+            // weight and no tracking, which is how the design draws it - so no ApplyTitleFace.
+            TextMeshProUGUI title = NewText("Title", panel.transform, "Enable Mic",
+                56f * ConsentDesignScale, TextAlignmentOptions.Center);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -ConsentTitleCenterFromTop), new Vector2(620f, 110f));
+            title.color = InkColor;
+
+            TextMeshProUGUI body = NewText("Body", panel.transform, "this is a sound based game!",
+                32f * ConsentDesignScale, TextAlignmentOptions.Top);
+            Place(body.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -ConsentBodyTopFromTop),
+                new Vector2(357f * ConsentDesignScale, 210f));
+            body.color = InkColor;
+
+            // The row is what lets one panel serve both steps: it positions whichever buttons are
+            // active, so the microphone step's lone button centres itself without a second set of
+            // authored coordinates. Sized for two because two is the most that are ever up at
+            // once. The design abuts the pair - the visible gap between them is the transparent
+            // margin inside each sprite, which 9-slicing preserves.
+            GameObject buttonRow = NewUI("ButtonRow", panel.transform);
+            Place(buttonRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -ConsentButtonRowCenterFromTop),
+                new Vector2(ConsentButtonSize.x * 2f, ConsentButtonSize.y));
+            HorizontalLayoutGroup row = buttonRow.AddComponent<HorizontalLayoutGroup>();
+            row.childAlignment = TextAnchor.MiddleCenter;
+            row.spacing = 0f;
+            row.childControlWidth = false;
+            row.childControlHeight = false;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = false;
+
+            // One button per answer, each with a fixed label and plaque, in the order the row lays
+            // them out: the microphone step's lone button, then the camera step's pair, refuse on
+            // the left and accept on the right as the design has them.
+            //
+            // The design's plaque choice tracks whether there is a competing option, not whether
+            // the answer is yes: timber for "OK" and "NO", brass only for the "YES!" that has a
+            // "NO" beside it to outweigh.
+            Button microphoneAccept = NewButton("MicrophoneAcceptButton", buttonRow.transform, "OK",
+                Vector2.zero, ConsentButtonSize, ButtonSpritePath, 32f * ConsentDesignScale);
+
+            Button cameraDecline = NewButton("CameraDeclineButton", buttonRow.transform, "NO",
+                Vector2.zero, ConsentButtonSize, ButtonSpritePath, 32f * ConsentDesignScale);
+
+            Button cameraAccept = NewButton("CameraAcceptButton", buttonRow.transform, "YES!",
+                Vector2.zero, ConsentButtonSize, ButtonPrimarySpritePath, 32f * ConsentDesignScale);
+            // Ink, not gold: the brass plaque is light and a gold label on it would vanish.
+            cameraAccept.GetComponentInChildren<TextMeshProUGUI>().color = InkColor;
+
+            // Authored on the microphone step, which is also what ConsentFlowUI opens on. Set here
+            // rather than left to Awake so the scene view shows the truth.
+            cameraDecline.gameObject.SetActive(false);
+            cameraAccept.gameObject.SetActive(false);
+
+            // A headless build never ticks a canvas, so the row has to be rebuilt by hand or the
+            // saved scene keeps the authored transforms and both buttons sit at the row's centre.
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)buttonRow.transform);
+
+            SerializedObject so = new SerializedObject(consentFlow);
+            SetRef(so, "root", panels);
+            SetRef(so, "title", title);
+            SetRef(so, "body", body);
+            SetRef(so, "microphoneAcceptButton", microphoneAccept);
+            SetRef(so, "cameraDeclineButton", cameraDecline);
+            SetRef(so, "cameraAcceptButton", cameraAccept);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return consentFlow;
+        }
+
+        // The microphone notice: same parchment, same rhythm and the same timber plaque as the
+        // consent panels, because it is the reply to the ask they made. Its own object rather than
+        // a third consent step - it has to be able to come back after that flow has finished.
+        private static MicrophoneNoticeUI BuildMicrophoneNotice(Transform canvas)
+        {
+            GameObject root = NewUI("MicrophoneNotice", canvas);
+            Stretch(root);
+            MicrophoneNoticeUI notice = root.AddComponent<MicrophoneNoticeUI>();
+
+            GameObject panels = NewUI("Panels", root.transform);
+            Stretch(panels);
+
+            Image dim = NewImage("Dim", panels.transform, new Color(0f, 0f, 0f, 0.55f));
+            Stretch(dim.gameObject);
+            // Blocks like the consent dim does, and for the same reason: the notice is up while
+            // the game is still in attract, and a tap that misses OK must not reach the playfield.
+            // The jslib bridge listens on the window in the capture phase, so the tap it is
+            // waiting for still gets through.
+            dim.raycastTarget = true;
+
+            GameObject panel = NewUI("Panel", panels.transform);
+            Place(panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, SmallSignSize);
+
+            Image parchment = NewImage("Parchment", panel.transform, new Color(0.93f, 0.88f, 0.74f, 1f));
+            Stretch(parchment.gameObject);
+            ApplySlicedSprite(parchment, SmallSignSpritePath, Color.white);
+
+            // One sentence, no title: a heading and a message would only say the same thing twice.
+            // Sized to wrap to two lines inside the 620 px the corner flowers leave free, and
+            // centred in a tall box so one line or two both sit on the same optical centre.
+            TextMeshProUGUI message = NewText("Message", panel.transform, "please enable the microphone!",
+                44f * ConsentDesignScale, TextAlignmentOptions.Center);
+            Place(message.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -MicNoticeMessageCenterFromTop), MicNoticeMessageSize);
+            message.color = InkColor;
+
+            // Timber, not brass: there is no competing option to outweigh, which is the same rule
+            // that gives the consent flow's lone "OK" its plaque.
+            Button dismiss = NewButton("DismissButton", panel.transform, "OK",
+                FromSmallSignTop(ConsentButtonRowCenterFromTop), ConsentButtonSize, ButtonSpritePath,
+                32f * ConsentDesignScale);
+
+            panels.SetActive(false);
+
+            SerializedObject so = new SerializedObject(notice);
+            SetRef(so, "root", panels);
+            SetRef(so, "dismissButton", dismiss);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return notice;
+        }
+
+        // Anchored to the canvas corner, not to any panel: the three panels it accompanies are
+        // three sizes in three places, and a button that moved with them would read as a different
+        // control each time.
+        private static QuitButtonUI BuildQuitButton(Transform canvas)
+        {
+            GameObject root = NewUI("QuitButton", canvas);
+            Stretch(root);
+            QuitButtonUI quit = root.AddComponent<QuitButtonUI>();
+
+            // A child rather than the component's own object: QuitButtonUI toggles this to hide,
+            // and a component that switched itself off could never switch itself back on.
+            Image background = NewImage("Button", root.transform, Color.white);
+            ApplySlicedSprite(background, XButtonSpritePath, Color.white);
+            Place(background.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-QuitButtonMarginPx, -QuitButtonMarginPx),
+                new Vector2(QuitButtonSizePx, QuitButtonSizePx));
+            background.raycastTarget = true;
+            Button button = background.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+
+            SerializedObject so = new SerializedObject(quit);
+            SetRef(so, "root", background.gameObject);
+            SetRef(so, "quitButton", button);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return quit;
+        }
+
         private static EndScreenUI BuildEndScreen(Transform canvas, Camera camera)
         {
             GameObject root = NewUI("EndScreen", canvas);
@@ -1118,19 +1360,32 @@ namespace FlappyVoice.Editor
             return new Vector2(0f, (SignSize.y * 0.5f) - centerFromTop);
         }
 
+        // The same conversion for the squat consent parchment, whose heights are measured from its
+        // own top edge.
+        private static Vector2 FromSmallSignTop(float centerFromTop)
+        {
+            return new Vector2(0f, (SmallSignSize.y * 0.5f) - centerFromTop);
+        }
+
         // 9-sliced timber plaque. The sprite's border keeps the bevel and the rounded ends intact
         // however wide the button is authored, so the two here can share one asset.
         private static Button NewButton(string name, Transform parent, string label, Vector2 position)
         {
+            return NewButton(name, parent, label, position, new Vector2(620f, 135f), ButtonSpritePath, 56f);
+        }
+
+        private static Button NewButton(string name, Transform parent, string label, Vector2 position,
+            Vector2 size, string spritePath, float fontSize)
+        {
             Image background = NewImage(name, parent, new Color(0.55f, 0.38f, 0.22f, 1f));
-            ApplySlicedSprite(background, ButtonSpritePath, Color.white);
-            Place(background.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position,
-                new Vector2(620f, 135f));
+            ApplySlicedSprite(background, spritePath, Color.white);
+            Place(background.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position, size);
             background.raycastTarget = true;
             Button button = background.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
 
-            TextMeshProUGUI text = NewText("Label", background.transform, label, 56f, TextAlignmentOptions.Center);
+            TextMeshProUGUI text = NewText("Label", background.transform, label, fontSize,
+                TextAlignmentOptions.Center);
             Stretch(text.gameObject);
             text.fontStyle = FontStyles.Bold;
             text.color = ButtonLabelColor;
@@ -1248,7 +1503,11 @@ namespace FlappyVoice.Editor
             fontResolved = true;
             try
             {
-                cachedFont = TMP_Settings.defaultFontAsset;
+                // Every piece of text in the game comes through NewText, so this one lookup is
+                // what puts the whole app in the face the signs are designed in. The TMP default
+                // (LiberationSans) is only a backstop for a project that has not built the asset
+                // yet - shipping on it would put the HUD in a different typeface to the art.
+                cachedFont = FontBuilder.EnsureFontAsset() ?? TMP_Settings.defaultFontAsset;
             }
             catch (Exception)
             {
@@ -1256,7 +1515,7 @@ namespace FlappyVoice.Editor
             }
             if (cachedFont == null)
             {
-                Debug.LogWarning("[SceneBuilder] No TMP default font asset. Import TMP Essential Resources.");
+                Debug.LogWarning("[SceneBuilder] No TMP font asset. Run Flappy Voice/Build Font Asset.");
             }
             return cachedFont;
         }
@@ -1295,7 +1554,8 @@ namespace FlappyVoice.Editor
             AttractPilot attractPilot, PipeSpawner pipeSpawner, ParallaxBackground background,
             WebCam webCamBackground, SingingFx singingFx, LivesManager livesManager,
             PlayerController player, Camera viewCamera, HudUI hud, LivesUI livesUI, TunerBarUI tunerBar,
-            EndScreenUI endScreen)
+            EndScreenUI endScreen, ConsentFlowUI consentFlow, MicrophoneNoticeUI microphoneNotice,
+            QuitButtonUI quitButton)
         {
             SerializedObject so = new SerializedObject(bootstrap);
             SetRef(so, "config", AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath));
@@ -1318,6 +1578,9 @@ namespace FlappyVoice.Editor
             SetRef(so, "livesUI", livesUI);
             SetRef(so, "tunerBar", tunerBar);
             SetRef(so, "endScreen", endScreen);
+            SetRef(so, "consentFlow", consentFlow);
+            SetRef(so, "microphoneNotice", microphoneNotice);
+            SetRef(so, "quitButton", quitButton);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 

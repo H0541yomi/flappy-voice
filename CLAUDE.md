@@ -33,7 +33,7 @@ The user usually has the Editor open, which locks the project. Work in a copy:
 ```sh
 rsync -a --exclude Library --exclude Temp --exclude Logs --exclude obj --exclude UserSettings \
   ./ /tmp/fv/
-U=/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity
+U=$(Tools/unity-path.sh)   # resolves the Hub install root per OS; UNITY_PATH overrides
 $U -batchmode -nographics -projectPath /tmp/fv -runTests -testPlatform EditMode \
    -testResults /tmp/fv/results.xml -logFile /tmp/fv/tests.log
 $U -batchmode -nographics -projectPath /tmp/fv \
@@ -64,7 +64,11 @@ System assets live in `Library/PackageCache`, not in `Assets`.
 - **Gap heights are random, never repeating.** `PipeSpawner.PickNoteOffset` draws from a
   reach-limited window with the previous offset *removed*, so a repeat is unrepresentable rather
   than unlikely. There is no music to sync to; that was removed on request.
-- **Difficulty is gap only, over pipes passed.** Speed and spawn interval are fixed for the run.
+- **Difficulty is gap and speed, over pipes passed.** `PipeGapSizeAtDifficulty` (clearance
+  1.375 → 1.075) and `PipeSpeedAtDifficulty` (3 → 5) share one ramp. **Spacing is fixed**
+  (`PipeSpacingUnits 10.4`) — `PipeSpawner` spawns on distance travelled, not a timer, so a
+  speed that moves mid-run cannot let the pipes drift closer together. `DifficultyRampTests`
+  pins both ends of the ramp and that `interval * speed == spacing` at each.
 - **Height is continuous in pitch.** Nothing may round pitch to a semitone on the way to a position.
   Two `PitchMathTests` cases exist purely to catch a reintroduction.
 - **`TunerBarUI.PixelsPerSemitone` also sets the tick ruler** — `SceneBuilder` reads the constant
@@ -84,11 +88,84 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   buttons sit below a capture rect that stops short of them.
 - **Heavier title text is a material asset** (`Art/Ui/SignTitle.mat`), never a material instance —
   TMP marks instances `HideAndDontSave`, so an instance silently reverts on scene save.
+- **The consent flow is UI only.** `ConsentFlowUI` calls no permission API at all: it raises
+  `OnMicrophoneRequest` / `OnCameraRequest` on the frame of the tap, and `GameBootstrap`
+  subscribes with named methods (never lambdas — `-=` has nothing to match on an anonymous one)
+  so its `StartMicrophoneRoutine` / `StartCameraRoutine` do the asking inside that same tap. The
+  panel exists because getUserMedia needs a user gesture outside desktop Chrome — without a
+  button there is no tap to spend.
+  While it is up it holds `HudUI.SetStartScreenSuppressed`, so the start sign does not stack
+  behind it.
+- **One consent panel, not two — and one button per answer.** Both steps are the same parchment,
+  so the step changes only the words and which buttons are active. The three buttons are
+  `microphoneAcceptButton` ("OK"), `cameraDeclineButton` ("NO") and `cameraAcceptButton` ("YES!"),
+  each with a fixed label, plaque and verdict, so no handler branches on `Current` to decide
+  *whether* the answer was yes. Do not re-merge "OK" and "NO" into one plaque because they share a
+  sprite: an earlier cut did, and its handler had to read the step to know which verdict to send.
+  The design's plaque choice tracks whether there is a competing option, not the verdict — timber
+  for "OK" and "NO", brass only for the "YES!" that has a "NO" beside it to outweigh.
+  **Both request events fire only for a grant.** The microphone step has no refuse button at all,
+  and refusing the camera just calls `GoTo(Step.Done)` without reporting, so neither event carries
+  a verdict — a refusal shows up only as `OnCompleted`. The catch to remember: the
+  browser can still hold a grant from an earlier visit, so `CameraPermission.HasPermission` may
+  read `true` immediately after the player tapped **NO**. Nothing may start the feed off
+  `HasPermission` alone; only `OnCameraRequest` means the player asked for it.
+  They sit in a `HorizontalLayoutGroup` sized
+  for two (the most ever up at once), so the lone microphone button centres itself — but a
+  headless build never ticks a canvas, so `SceneBuilder` must call
+  `LayoutRebuilder.ForceRebuildLayoutImmediate` or the saved scene keeps them stacked at the row's
+  centre.
+- **All text is one generated font asset.** `Assets/Art/Fonts/IMFellGreatPrimerSC SDF.asset` is
+  output of `Assets/Editor/FontBuilder.cs` (**Flappy Voice → Build Font Asset**) from the
+  committed `.ttf`; `SceneBuilder.ResolveFont` loads it and every `NewText` call goes through
+  there, so that one lookup is what puts the whole app in the face the art is designed in. The
+  atlas is baked and the asset left in `AtlasPopulationMode.Static` — the vocabulary is ASCII and
+  known up front, and Dynamic would rasterise on the player's main thread on Web.
+  `EnsureFontAsset` returns an existing asset untouched, so a scene rebuild does not churn the
+  atlas or its GUID. The TMP default (LiberationSans) remains only as a backstop.
+- **One ink for the whole app.** `InkColor` is #501713, the brown the signs are drawn in, and
+  `MutedInkColor` is a lifted version of it for quiet lines; `ButtonLabelColor` is #FBD97B,
+  because ink on dark timber would be unreadable. The **only** text that is not ink is the in-run
+  `ScoreLabel`, which floats over the playfield rather than sitting on parchment and keeps
+  `NewText`'s white. The brass `YES!` plaque is light, so its label is ink, not gold.
+- **Consent layout came from Figma, its proportions did not.** The design stretches the parchment
+  to a 1.401 aspect where the sprite's own is 1.187; since it is not 9-sliced, the consent heights
+  come across as *fractions* of the design frame (`ConsentTitleCenterFromTop` and friends) rather
+  than scaled pixels. Widths and type sizes do scale straight across, by `ConsentDesignScale`.
+- **The X button quits to the host, and belongs to the screen.** `QuitButtonUI` sits in the
+  canvas's top-right corner, never on a panel — the three panels are three sizes in three places.
+  It shows whenever `GameState != Playing`, which is one subscription instead of three because
+  Attract always has exactly one sign out (consent, microphone notice, or start) and GameOver
+  always has the end screen. The tap calls `HostBridge.RequestQuit`, which posts
+  `{schema_version: 1, action: "quit"}` to `window.VariantOriginalsHost` through
+  `Assets/Plugins/WebGL/FlappyVoiceHost.jslib`; there is nothing to close from inside the game,
+  because Variant owns the frame. Two clearances are load-bearing and neither has much slack:
+  the tuner pill (600 px, centred) leaves ~38 px at 9:19.5, the tightest aspect a phone ships,
+  and the end screen's capture rect stops 53 px below the button, which is the only reason the
+  shared card does not have an X in its corner. `SceneBuilder` builds it **last** so it stays
+  above the consent flow's blocking dim.
+- **The microphone notice is not a consent step.** `MicrophoneNoticeUI` is the same parchment as
+  the consent panels and follows their vertical rhythm, but it is its own object: the consent
+  flow's job is to spend a tap on `getUserMedia`, and this reports the answer, which has to be
+  able to arrive long after that flow is `Done`. `GameBootstrap.ReportMicrophoneMissing` raises
+  it at most once per deliberate ask — `RequestMicrophone` guards on `microphoneRoutineRunning`,
+  so the web's 0.5 s retry loop cannot nag — and `ShowMicrophoneNoticeRoutine` waits out
+  `consentFlow.IsShowing` first, because two parchments stacked read as one broken one.
+  Dismissing changes nothing about the microphone: the retry loop is still running underneath,
+  and on the web the OK tap is itself a gesture the jslib bridge is listening for.
+  **`SetStartScreenSuppressed` now has two owners.** The notice touches it only on a real
+  transition, never from `Awake`, or whichever of the two ran second would drop the other's hold.
 - **Raw art is keyed, not hand-edited** — `python3 Tools/key-ui-art.py` turns the magenta JPEGs in
   `Assets/Art/images/` into the PNGs in `Assets/Art/Ui/`. Sprite `.meta` files are written by hand
   alongside the PNG, before either Unity sees it, so a headless build and the user's Editor agree
   on the GUID. `m_DefaultBehaviorMode` is 3D, so a meta that omits `textureType: 8` imports as a
   plain texture and `LoadAssetAtPath<Sprite>` quietly returns null.
+  Drops that arrive already cut out are PNGs and skip the key: `Target.extension` picks the
+  path, and `HALO_FLOOR` throws away the a≤0.19 haze they carry so the trim finds the artwork.
+  `ALPHA_FLOOR` is per-drop overridable (`Target.alpha_floor`) because a noisier generation keys
+  its empty area to ~0.09 rather than the usual ~0.03 and survives the shared 0.06 floor — which
+  is invisible against a dark backdrop and an obvious pale rectangle on parchment. Check a new
+  sprite *on the parchment*, not against the editor's dark background.
 - **The Web build never touches `UnityEngine.Microphone`.** The class does compile for Web in
   6000.4+, but `AudioClip.GetData` fails while a recording is active, so a live signal is
   unreadable through it. `MicrophoneInput` picks a backend instead: `UnityMicrophoneBackend`
@@ -100,10 +177,16 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   its own window-level listeners and `GameBootstrap` keeps retrying while
   `MicPermission.RetriesOnUserGesture`. That retry loop is why the start sign's hint is swappable
   (`HudUI.SetStartHint`) — it is the only feedback the player gets.
-- **Deliberately absent:** background music during attract/play and everything that read it
-  (`MusicDirector`, `SongAnalyzer`, `BeatNotePlanner`, beat-synced spawning), dev height source and
+- **Deliberately absent:** music of any kind, including the game-over bed, and everything that
+  read it (`MusicDirector`, `SongAnalyzer`, `BeatNotePlanner`, beat-synced spawning, `GameAudio`'s
+  music source). `GameAudio` is two one-shots and nothing else. Also gone: dev height source and
   dev panel, the flap bob, the world-space note line, the mic level meter, in-gap note labels,
   `PitchMeterUI`. All removed on request — do not reintroduce them as "helpful".
+- **`GameConfig.UseCameraBackground` is the camera kill switch.** Off means `GameBootstrap` never
+  runs `StartCameraRoutine` (no prompt at all) and `WebCam` tears the feed down live, so the
+  painted parallax sky shows — the same picture a player who refuses the prompt gets. It lives on
+  the config asset, not on `GameBootstrap`, because the scene is generated and a flag flipped on
+  the component is lost at the next `SceneBuilder` run.
 - `AdaptiveRecenterer` is intentionally not wired; drifting the floor mid-run would move every gap
   already on screen.
 

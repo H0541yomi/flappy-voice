@@ -15,9 +15,11 @@ namespace FlappyVoice.Config
         // PipeGapGeometryTests pins that, so retune these two together with it.
         [SerializeField] private float _pipeGapClearanceUnits = 1.375f;
         [SerializeField] private float _minPipeGapClearanceUnits = 1.075f;
-        // Speed and spacing are deliberately fixed. Difficulty is a question of how accurately
-        // you have to sing, not how fast the game moves: the ramp only narrows the gap.
+        // Speed ramps with difficulty, spacing does not. Pipes stay _pipeSpacingUnits apart in
+        // world space for the whole run, so a fully ramped run is one where each gap arrives
+        // sooner - it is never one where the gaps bunch up.
         [SerializeField] private float _pipeSpeed = 3f;
+        [SerializeField] private float _maxPipeSpeed = 5f;
         // How far apart pipes sit, in world units. Spacing rather than an interval because it
         // is what the player actually sees; the spawner derives its interval from this and the
         // speed.
@@ -39,7 +41,8 @@ namespace FlappyVoice.Config
         [SerializeField] private int _playerLives = 3;
         // Invincibility normally ends when the pipe that was hit has gone past. This floor holds it
         // open a little longer so the flash reads as feedback rather than a flicker; it is well
-        // under the ~3.5 s between pipes, so it can never hand out a free pass through the next one.
+        // under the gap between pipes even at the ramped-up speed (~2.1 s), so it can never hand
+        // out a free pass through the next one.
         [SerializeField] private float _minInvincibleSec = 0.75f;
         // Backstop for the case where the hit pipe never does go past - recycled and respawned out
         // in front of the bird, or a run that ends first.
@@ -58,7 +61,7 @@ namespace FlappyVoice.Config
         [SerializeField] private float _recenterEdgeThreshold = 0.15f;
 
         [Header("Mic / detection")]
-        [SerializeField] private float _amplitudeGateRms = 0.015f;
+        [SerializeField] private float _amplitudeGateRms = 0.03f;
         [SerializeField] private int _pitchBufferSize = 2048;
         [SerializeField] private float _sustainMs = 80f;
         [SerializeField] private float _yinThreshold = 0.15f;
@@ -66,6 +69,15 @@ namespace FlappyVoice.Config
         [Header("Movement")]
         [SerializeField] private float _heightSmoothTimeSec = 0.06f;
         [SerializeField] private float _maxVerticalSpeed = 9f;
+
+        [Header("Dev")]
+        // Off means the selfie feed is never asked for and never drawn, and the painted parallax
+        // sky it normally covers is what you see - the same picture a player who refuses the
+        // camera prompt gets. It lives on the config asset rather than on GameBootstrap because
+        // the scene is generated: a flag flipped on the component is thrown away the next time
+        // SceneBuilder runs, and this one is for recording and debugging without your own face
+        // in every frame.
+        [SerializeField] private bool _useCameraBackground = true;
 
         public int PipeGapNotes => _pipeGapNotes;
         public float PipeGapClearanceUnits => _pipeGapClearanceUnits;
@@ -75,8 +87,9 @@ namespace FlappyVoice.Config
         public float MinInvincibleSec => _minInvincibleSec;
         public float MaxInvincibleSec => _maxInvincibleSec;
         public float PipeSpeed => _pipeSpeed;
+        public float MaxPipeSpeed => _maxPipeSpeed;
         public float PipeSpacingUnits => _pipeSpacingUnits;
-        public float SpawnIntervalSec => _pipeSpeed > 0.01f ? _pipeSpacingUnits / _pipeSpeed : 2f;
+        public float SpawnIntervalSec => SpawnIntervalSecAtSpeed(_pipeSpeed);
         public AnimationCurve DifficultyRampCurve => _difficultyRampCurve;
         public int DifficultyRampPipes => _difficultyRampPipes;
         public float PipeSpawnXOffset => _pipeSpawnXOffset;
@@ -101,6 +114,8 @@ namespace FlappyVoice.Config
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
+
+        public bool UseCameraBackground => _useCameraBackground;
 
         public float UnitsPerSemitone
         {
@@ -132,6 +147,21 @@ namespace FlappyVoice.Config
             return Mathf.Max(0.1f, noteSpan + clearance);
         }
 
+        // Single source of truth for pipe speed, on the same ramp as the gap. difficulty01 0 =
+        // start of a run, 1 = fully ramped.
+        public float PipeSpeedAtDifficulty(float difficulty01)
+        {
+            return Mathf.Lerp(_pipeSpeed, Mathf.Max(_pipeSpeed, _maxPipeSpeed),
+                Mathf.Clamp01(difficulty01));
+        }
+
+        // Spacing is the fixed quantity, so the interval falls out of whatever the speed is now.
+        // Only good for "how long until the next pipe" - the spawner paces itself by distance.
+        public float SpawnIntervalSecAtSpeed(float speed)
+        {
+            return speed > 0.01f ? _pipeSpacingUnits / speed : 2f;
+        }
+
         public static GameConfig CreateDefault()
         {
             GameConfig c = CreateInstance<GameConfig>();
@@ -140,6 +170,7 @@ namespace FlappyVoice.Config
             c._pipeGapClearanceUnits = 1.375f;
             c._minPipeGapClearanceUnits = 1.075f;
             c._pipeSpeed = 3f;
+            c._maxPipeSpeed = 5f;
             c._pipeSpacingUnits = 10.4f;
             c._difficultyRampCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
             c._difficultyRampPipes = 100;
@@ -162,13 +193,15 @@ namespace FlappyVoice.Config
             c._recenterDriftRatePerSec = 0.35f;
             c._recenterEdgeThreshold = 0.15f;
 
-            c._amplitudeGateRms = 0.015f;
+            c._amplitudeGateRms = 0.03f;
             c._pitchBufferSize = 2048;
             c._sustainMs = 80f;
             c._yinThreshold = 0.15f;
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
+
+            c._useCameraBackground = true;
 
             c.name = "GameConfig (Default)";
             return c;

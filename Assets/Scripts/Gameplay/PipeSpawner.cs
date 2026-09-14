@@ -25,7 +25,7 @@ namespace FlappyVoice.Gameplay
         private GameStateManager _state;
         private ScoreManager _score;
         private PlayerController _player;
-        private float _spawnTimer;
+        private float _spawnDistance;
         private float _currentInterval;
         private int _lastNoteOffset = -1;
 
@@ -90,13 +90,13 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
-            CurrentSpeed = _config.PipeSpeed;
+            CurrentSpeed = _config.PipeSpeedAtDifficulty(0f);
             CurrentGapSize = _config.PipeGapSizeAtDifficulty(0f);
-            _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSec);
+            _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSecAtSpeed(CurrentSpeed));
             _lastNoteOffset = -1;
 
             // first pipe appears immediately so attract mode always has a gap to fly toward
-            _spawnTimer = _currentInterval;
+            _spawnDistance = SpawnSpacing();
         }
 
         public bool TryGetNextGapAhead(float x, out float gapCenterY)
@@ -155,25 +155,35 @@ namespace FlappyVoice.Gameplay
                 }
             }
 
-            _spawnTimer += deltaTime;
-            if (_spawnTimer >= _currentInterval)
+            _spawnDistance += CurrentSpeed * deltaTime;
+            float spacing = SpawnSpacing();
+            if (_spawnDistance >= spacing)
             {
-                _spawnTimer -= _currentInterval;
+                _spawnDistance -= spacing;
                 Spawn();
             }
         }
 
         // Pipes passed, not seconds elapsed: the run gets harder because the player is doing
-        // well, not because they are still alive. Speed and spacing stay put - the only thing
-        // that moves is how little room there is around the note.
+        // well, not because they are still alive. Spacing stays put - what ramps is how fast the
+        // pipes come at you and how little room there is around the note.
         private void UpdateDifficulty()
         {
             int passed = _score != null ? _score.Score : 0;
             float difficulty = _config.DifficultyForPipesPassed(passed);
 
-            CurrentSpeed = _config.PipeSpeed;
+            CurrentSpeed = _config.PipeSpeedAtDifficulty(difficulty);
             CurrentGapSize = _config.PipeGapSizeAtDifficulty(difficulty);
-            _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSec);
+            _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSecAtSpeed(CurrentSpeed));
+        }
+
+        // Pipes are paced by distance travelled, not by a timer: the speed ramps mid-run, and
+        // accumulating time against an interval that is itself moving leaves each pipe a little
+        // closer to the last one. Distance since the previous spawn is what "10.4 units apart"
+        // actually means, at any speed and through any change of speed.
+        private float SpawnSpacing()
+        {
+            return Mathf.Max(0.1f, _config.PipeSpacingUnits);
         }
 
         public float CurrentDifficulty01 =>
@@ -294,6 +304,9 @@ namespace FlappyVoice.Gameplay
                 return cap;
             }
 
+            // _currentInterval shrinks as the speed ramps, so the window of notes the next gap
+            // may sit on narrows with it: less time between pipes is less distance the bird can
+            // sing its way across.
             float reachUnits = _config.MaxVerticalSpeed * _currentInterval * _reachSafetyFactor;
             int reachSemitones = Mathf.Max(1, Mathf.FloorToInt(reachUnits / unitsPerSemitone));
             return Mathf.Min(cap, reachSemitones);

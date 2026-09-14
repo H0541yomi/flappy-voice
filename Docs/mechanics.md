@@ -80,7 +80,7 @@ neighbour fits" is only ~0.75 units wide, and the run-start gap sits near its to
 longer pin the radius as a literal; they read it from the config, so a radius change has to keep
 satisfying the invariant rather than quietly retuning the assertion.
 
-## Difficulty is accuracy, not tempo
+## Difficulty is accuracy and tempo, over pipes passed
 
 `GameConfig.DifficultyForPipesPassed` ramps over `DifficultyRampPipes 100` **pipes passed**, along
 `DifficultyRampCurve`, and holds flat past the cap so a player good enough to reach 500 is not
@@ -88,19 +88,31 @@ squeezed by a gap that keeps closing. Two reasons it counts pipes rather than se
 between pipes should not tighten the gap under you, and two runs that reach the same score should
 have been equally hard to get there.
 
-**Speed (`PipeSpeed 3`) and spacing (`PipeSpacingUnits 10.4`) are fixed for the whole run.** Only
-the gap narrows. The game asks you to sing more accurately, not faster. `_maxPipeSpeed` and
-`_minSpawnIntervalSec` were removed from `GameConfig` rather than left unused.
+Two things ride that one ramp, both through a `…AtDifficulty` method on `GameConfig`:
 
-Spacing is authored in **world units**, not seconds: it is what the player actually sees. The
-spawner derives its interval back out of it — `SpawnIntervalSec = PipeSpacingUnits / PipeSpeed`
-≈ 3.5 s.
+| | at 0 pipes | at 100+ pipes |
+|---|---|---|
+| `PipeGapSizeAtDifficulty` (clearance) | `1.375` | `1.075` |
+| `PipeSpeedAtDifficulty` | `3` | `5` |
 
-## Where pipes come from: a timer, at a random note
+**Spacing (`PipeSpacingUnits 10.4`) is not on the ramp** and is fixed for the whole run. Pipes
+never bunch up; a fully ramped run is one where the same spacing arrives sooner. Spacing is
+authored in **world units**, not seconds, because it is what the player actually sees — the
+interval falls back out of it as `SpawnIntervalSecAtSpeed = PipeSpacingUnits / speed`, which
+runs from ≈3.5 s at the start of a run down to ≈2.1 s fully ramped.
 
-`PipeSpawner.Update` runs one free-running timer and calls `PickNoteOffset` for the height. There
-is no music to sync to — the game is silent while the mic is open — so the note is drawn at random
-from the range.
+Ramping speed narrows the note window for free: `MaxStepSemitones` (below) sizes its window from
+that same interval, so as pipes arrive sooner, consecutive gaps are placed closer together in
+pitch — there is less time to sing across the distance.
+
+## Where pipes come from: a distance, at a random note
+
+`PipeSpawner.Update` accumulates **distance travelled**, not time, and spawns every
+`PipeSpacingUnits`; `PickNoteOffset` supplies the height. Distance rather than a timer because
+the speed moves mid-run: accumulating time against an interval that is itself shrinking leaves
+each pipe slightly closer to the last one, and the spacing is the thing that must not drift.
+There is no music to sync to — the game is silent while the mic is open — so the note is drawn at
+random from the range.
 
 The draw is uniform over a reach-limited window around the previous gap, **with the previous offset
 removed from the window rather than merely made unlikely**, so the same height can never come up
@@ -188,8 +200,8 @@ the edge of the green. Consequences that fall out of this and are intentional:
 | Transition | Trigger | Effects |
 |---|---|---|
 | Attract → Playing | anchor captured | `PipeSpawner` clears pipes on the bird; lives restored; score SFX armed |
-| Playing → GameOver | pipe hit with **no lives left** | best score committed, game-over music |
-| GameOver → Attract | Play Again | anchor reset, spawner reset, bird re-centred, music stopped |
+| Playing → GameOver | pipe hit with **no lives left** | best score committed |
+| GameOver → Attract | Play Again | anchor reset, spawner reset, bird re-centred |
 
 Scoring is a trigger box at the gap centre (`Pipe.ScoreZone`), so a point — and its sound — lands as
 the bird crosses the **middle** of a pipe.
@@ -225,10 +237,9 @@ counted, since an invincible contact never reaches `LivesManager` and `ResetLive
 raises the count. `ApplyState(GameOver)` deliberately does **not** also play it: the hit that
 ended the run spent a life like any other, so a second call there would double the last one.
 
-`GameAudio` owns all sound: a music source and a one-shot channel. **Attract and Playing are
-silent** — the mic is open the whole time the game is on screen, so anything out of the speaker
-feeds straight back into the pitch detector. Only `bgm_gameover.wav` plays, and only once the run
-is over; leaving GameOver stops it.
+`GameAudio` owns all sound, and it is only ever those two one-shots. **There is no music at all**,
+not even on the game-over screen — the mic is open the whole time the game is on screen, so
+anything out of the speaker feeds straight back into the pitch detector.
 
 ## Presentation, and what drives it
 
@@ -310,7 +321,7 @@ static or kinematic colliders and nothing ever kills the player.
 ## Pitch detection
 
 YIN (`YinPitchDetector`, `PitchBufferSize 2048`, `YinThreshold 0.15`) over the newest mic samples,
-gated at `AmplitudeGateRms 0.015`. Detection runs 70–1200 Hz — wider than the anchor's 55–700 Hz
+gated at `AmplitudeGateRms 0.03`. Detection runs 70–1200 Hz — wider than the anchor's 55–700 Hz
 sanity clamp on purpose, since clamping *detection* at 700 Hz makes anything above ~F5 read as
 unvoiced and freezes the bird mid-song.
 

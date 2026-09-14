@@ -1,3 +1,4 @@
+using FlappyVoice.Config;
 using UnityEngine;
 
 namespace FlappyVoice.Video
@@ -18,9 +19,14 @@ namespace FlappyVoice.Video
         [SerializeField] private bool mirror = true;
 
         private Camera viewCamera;
+        private GameConfig config;
         private MeshRenderer meshRenderer;
         private WebCamTexture webCamTexture;
         private bool warnedRotated;
+        // Kept so the dev toggle can reopen the feed without a second permission round trip: the
+        // grant is still good, only the drawing was switched off.
+        private string grantedDeviceName;
+        private bool hasGrant;
 
         // Applied state, so the per-frame path costs two int compares and returns.
         private int appliedSourceWidth = -1;
@@ -33,9 +39,14 @@ namespace FlappyVoice.Video
 
         public bool IsRunning => webCamTexture != null && webCamTexture.isPlaying;
 
-        public void Configure(Camera camera)
+        // A missing config means the camera stays on, the same way every other fallback here
+        // keeps the shipped behaviour rather than the dev one.
+        private bool CameraBackgroundEnabled => config == null || config.UseCameraBackground;
+
+        public void Configure(Camera camera, GameConfig gameConfig)
         {
             viewCamera = camera;
+            config = gameConfig;
         }
 
         private void Awake()
@@ -51,20 +62,65 @@ namespace FlappyVoice.Video
         // frame, and nothing about it reports the failure.
         public void Begin(string deviceName)
         {
-            if (feedMaterial == null || webCamTexture != null)
+            grantedDeviceName = deviceName;
+            hasGrant = true;
+            OpenFeed();
+        }
+
+        private void OpenFeed()
+        {
+            if (feedMaterial == null || webCamTexture != null || !hasGrant || !CameraBackgroundEnabled)
             {
                 return;
             }
 
-            webCamTexture = string.IsNullOrEmpty(deviceName)
+            webCamTexture = string.IsNullOrEmpty(grantedDeviceName)
                 ? new WebCamTexture()
-                : new WebCamTexture(deviceName);
+                : new WebCamTexture(grantedDeviceName);
             feedMaterial.mainTexture = webCamTexture;
             webCamTexture.Play();
         }
 
+        // Releasing the texture rather than just hiding the quad: a live WebCamTexture keeps the
+        // browser's camera indicator lit, which would claim the game is watching when it is not.
+        private void StopFeed()
+        {
+            if (webCamTexture == null)
+            {
+                return;
+            }
+
+            webCamTexture.Stop();
+            webCamTexture = null;
+
+            if (feedMaterial != null)
+            {
+                feedMaterial.mainTexture = null;
+            }
+
+            meshRenderer.enabled = false;
+            // The applied state is what makes Update cheap, and it would match again on a reopen
+            // and skip the crop, leaving the quad hidden forever.
+            appliedSourceWidth = -1;
+            appliedSourceHeight = -1;
+            appliedViewAspect = -1f;
+        }
+
         private void Update()
         {
+            // Honoured live, not only at startup: a toggle you have to restart to see is no use
+            // while you are looking at the thing it turns off.
+            if (!CameraBackgroundEnabled)
+            {
+                StopFeed();
+                return;
+            }
+
+            if (webCamTexture == null && hasGrant)
+            {
+                OpenFeed();
+            }
+
             if (webCamTexture == null || viewCamera == null)
             {
                 return;

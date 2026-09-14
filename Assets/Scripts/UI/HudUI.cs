@@ -26,6 +26,7 @@ namespace FlappyVoice.UI
         private int renderedScore = int.MinValue;
         private bool subscribed;
         private bool singToStartVisible;
+        private bool startScreenSuppressed;
 
         // The hint's resting copy lives in SceneBuilder, not here; it is captured on the first
         // override so restoring it never has to duplicate the authored string.
@@ -42,6 +43,18 @@ namespace FlappyVoice.UI
                 Subscribe();
             }
             RenderScore(scoreManager != null ? scoreManager.Score : 0);
+            ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
+        }
+
+        // Held by the consent flow while it is up. Two parchments stacked read as one broken
+        // one, and a sign that says "sing to play" is a lie until the microphone is granted.
+        //
+        // Reapplies unconditionally rather than early-out on an unchanged flag: the sign's
+        // authored state is whatever the last SceneBuilder run left, so a flag that starts out
+        // agreeing with the argument is not evidence the sign already agrees with either.
+        public void SetStartScreenSuppressed(bool suppressed)
+        {
+            startScreenSuppressed = suppressed;
             ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
         }
 
@@ -161,7 +174,7 @@ namespace FlappyVoice.UI
                 scoreGroup.alpha = state == GameState.Playing ? 1f : 0f;
             }
 
-            singToStartVisible = state == GameState.Attract;
+            singToStartVisible = state == GameState.Attract && !startScreenSuppressed;
             if (singToStartGroup != null)
             {
                 singToStartGroup.gameObject.SetActive(singToStartVisible);

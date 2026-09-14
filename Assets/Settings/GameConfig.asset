@@ -16,6 +16,7 @@ MonoBehaviour:
   _pipeGapClearanceUnits: 1.375
   _minPipeGapClearanceUnits: 1.075
   _pipeSpeed: 3
+  _maxPipeSpeed: 5
   _pipeSpacingUnits: 10.4
   _difficultyRampCurve:
     serializedVersion: 2
@@ -59,9 +60,10 @@ MonoBehaviour:
   _recenterWindowSec: 4
   _recenterDriftRatePerSec: 0.35
   _recenterEdgeThreshold: 0.15
-  _amplitudeGateRms: 0.015
+  _amplitudeGateRms: 0.03
   _pitchBufferSize: 2048
   _sustainMs: 80
   _yinThreshold: 0.15
   _heightSmoothTimeSec: 0.06
   _maxVerticalSpeed: 9
+  _useCameraBackground: 1

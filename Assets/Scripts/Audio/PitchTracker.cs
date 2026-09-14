@@ -25,7 +25,7 @@ namespace FlappyVoice.Audio
         private float[] _buffer;
 
         private int _pitchBufferSize = 2048;
-        private float _amplitudeGateRms = 0.015f;
+        private float _amplitudeGateRms = 0.03f;
         private float _sustainMs = 80f;
         private float _yinThreshold = 0.15f;
         private int _detectorSampleRate;
