@@ -54,7 +54,7 @@ namespace FlappyVoice.UI
         // query starts slightly behind the bird: the band must keep describing the gap being flown
         // through, not the next one along.
         private const float GapLookBehindUnits = 1.2f;
-        private const float FallbackBodyRadiusUnits = 0.42f;
+        private const float FallbackBodyRadiusUnits = 0.36f;
 
         private const string SilentNoteText = "--";
         private const string SilentCentsText = "";
@@ -258,7 +258,8 @@ namespace FlappyVoice.UI
             }
 
             return PitchMath.TrySafePitchWindow(gapCenterY, gapSize,
-                player != null ? player.BodyRadiusUnits : FallbackBodyRadiusUnits,
+                player != null ? player.BodyRadiusUnits
+                    : (config != null ? config.PlayerBodyRadiusUnits : FallbackBodyRadiusUnits),
                 config.PlayfieldMinY, config.PlayfieldMaxY, voiceSource.FloorMidi,
                 Mathf.Max(1, config.OctaveWidthSemitones), out lowMidi, out highMidi);
         }

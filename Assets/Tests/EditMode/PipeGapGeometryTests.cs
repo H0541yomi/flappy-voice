@@ -5,14 +5,16 @@ using UnityEngine;
 
 namespace FlappyVoice.Tests
 {
-    // A pipe gap is specified in NOTES: it spans two adjacent notes and rejects the notes either
-    // side of that pair. Nothing in the running game states that in one place - it falls out of the
-    // gap height, the pitch-to-height mapping and the bird's collider together - so it is pinned
-    // here, at both ends of the difficulty ramp.
+    // A pipe gap is specified in NOTES: it is centred ON one note, admits that note, and rejects
+    // the notes either side of it. Nothing in the running game states that in one place - it falls
+    // out of the gap height, the pitch-to-height mapping and the bird's collider together - so it
+    // is pinned here, at both ends of the difficulty ramp.
     public class PipeGapGeometryTests
     {
         // Authored on the player's CircleCollider2D in SceneBuilder.BuildPlayer.
-        private const float BirdRadius = 0.42f;
+        // Read from the config rather than pinned here: the assertions below ARE the invariant,
+        // so a radius change has to keep satisfying them rather than quietly retuning the test.
+        private float BirdRadius => config.PlayerBodyRadiusUnits;
 
         private GameConfig config;
 
@@ -38,25 +40,27 @@ namespace FlappyVoice.Tests
         }
 
         [Test]
-        public void GapIsSpecifiedInNotes()
+        public void GapIsOneNoteWide()
         {
-            Assert.That(config.PipeGapNotes, Is.EqualTo(2));
+            Assert.That(config.PipeGapNotes, Is.EqualTo(1));
         }
 
+        // A one-note gap is pure clearance - there is no note span left inside it to scale - so
+        // the range width no longer moves the opening. What the range width does move is the
+        // neighbouring note, and that is the bound the gap has to stay under.
         [Test]
-        public void GapHeightTracksTheWidthOfTheRange()
+        public void GapIsTheClearanceAndNothingElse()
         {
-            float wide = config.PipeGapSizeAtDifficulty(0f);
+            Assert.That(config.PipeGapSizeAtDifficulty(0f),
+                Is.EqualTo(config.PipeGapClearanceUnits).Within(1e-4f));
+            Assert.That(config.PipeGapSizeAtDifficulty(1f),
+                Is.EqualTo(config.MinPipeGapClearanceUnits).Within(1e-4f));
 
-            // Same gap in notes over twice the semitones: a semitone is half as tall on screen, so
-            // the note span inside the gap halves while the bird's own clearance does not move.
             GameConfig narrower = GameConfig.CreateDefault();
             try
             {
-                float oneOctave = SizeAtOctaveWidth(narrower, 12);
-                Assert.That(wide, Is.LessThan(oneOctave));
-                Assert.That(oneOctave - wide,
-                    Is.EqualTo(config.UnitsPerSemitone).Within(1e-4f));
+                Assert.That(SizeAtOctaveWidth(narrower, 12),
+                    Is.EqualTo(config.PipeGapSizeAtDifficulty(0f)).Within(1e-4f));
             }
             finally
             {
@@ -66,44 +70,45 @@ namespace FlappyVoice.Tests
 
         [TestCase(0f)]
         [TestCase(1f)]
-        public void BothNotesOfThePairFitThroughTheGap(float difficulty)
+        public void TheNoteTheGapWasPlacedOnFitsThroughIt(float difficulty)
         {
             AssertPasses(difficulty, 0, true);
-            AssertPasses(difficulty, 1, true);
         }
 
         [TestCase(0f)]
         [TestCase(1f)]
-        public void NotesOutsideThePairDoNotFit(float difficulty)
+        public void NeitherNeighbourOfThatNoteFits(float difficulty)
         {
             AssertPasses(difficulty, -1, false);
-            AssertPasses(difficulty, 2, false);
+            AssertPasses(difficulty, 1, false);
         }
 
         // The gap never narrows past its own promise: the ramped-down clearance still has to admit
-        // the pair, or the difficulty curve would quietly turn a two-note gap into a one-note gap.
+        // the note it is placed on, or the difficulty curve would close the pipe outright.
         [Test]
-        public void ClearanceRampNeverDropsBelowTheNoteSpan()
+        public void ClearanceRampNeverDropsBelowTheBird()
         {
             Assert.That(config.MinPipeGapClearanceUnits, Is.LessThan(config.PipeGapClearanceUnits));
             Assert.That(config.PipeGapSizeAtDifficulty(1f),
                 Is.LessThan(config.PipeGapSizeAtDifficulty(0f)));
+            Assert.That(config.PipeGapSizeAtDifficulty(1f),
+                Is.GreaterThan(2f * config.PlayerBodyRadiusUnits));
         }
 
-        // noteFromLowerOfPair 0 is the lower note the gap is named for, 1 the upper one; -1 and 2
-        // are the neighbours that must be shut out.
-        private void AssertPasses(float difficulty, int noteFromLowerOfPair, bool expected)
+        // semitonesFromGapNote 0 is the note the gap is centred on; -1 and +1 are the neighbours
+        // that must be shut out.
+        private void AssertPasses(float difficulty, int semitonesFromGapNote, bool expected)
         {
-            const int lowerOffset = 8;
+            const int gapOffset = 8;
             float gap = config.PipeGapSizeAtDifficulty(difficulty);
             float gapCenterY = Mathf.Lerp(config.PlayfieldMinY, config.PlayfieldMaxY,
-                PitchMath.HeightForNotePair(lowerOffset, config.OctaveWidthSemitones));
+                PitchMath.HeightForOffset(gapOffset, config.OctaveWidthSemitones));
 
             float noteY = Mathf.Lerp(config.PlayfieldMinY, config.PlayfieldMaxY,
-                PitchMath.HeightForOffset(lowerOffset + noteFromLowerOfPair, config.OctaveWidthSemitones));
+                PitchMath.HeightForOffset(gapOffset + semitonesFromGapNote, config.OctaveWidthSemitones));
 
             Assert.That(Fits(gap, gapCenterY, noteY), Is.EqualTo(expected),
-                $"note {noteFromLowerOfPair} of the pair, difficulty {difficulty}, gap {gap}");
+                $"note {semitonesFromGapNote} from the gap note, difficulty {difficulty}, gap {gap}");
         }
 
         // Bird held at noteY against a gap of `gap` centred on gapCenterY.
@@ -124,9 +129,9 @@ namespace FlappyVoice.Tests
             int width = config.OctaveWidthSemitones;
             float gap = config.PipeGapSizeAtDifficulty(0f);
 
-            for (int lowerOffset = 0; lowerOffset < width; lowerOffset++)
+            for (int gapOffset = 0; gapOffset <= width; gapOffset++)
             {
-                float gapHeight = PitchMath.HeightForNotePair(lowerOffset, width);
+                float gapHeight = PitchMath.HeightForOffset(gapOffset, width);
                 float floor = PitchMath.FloorMidiForNoteAtHeight(sungMidi, gapHeight, width);
 
                 float gapCenterY = Mathf.Lerp(config.PlayfieldMinY, config.PlayfieldMaxY, gapHeight);
@@ -134,7 +139,7 @@ namespace FlappyVoice.Tests
                     PitchMath.ClampToOctaveHeight(sungMidi, floor, width));
 
                 Assert.That(Fits(gap, gapCenterY, birdY), Is.True,
-                    $"gap at pair {lowerOffset} of {width}, sung {sungMidi}");
+                    $"gap at note {gapOffset} of {width}, sung {sungMidi}");
             }
         }
 

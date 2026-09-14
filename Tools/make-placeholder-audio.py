@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesises the placeholder audio in Flappy Voice/Assets/Audio.
+"""Synthesises the placeholder audio in Assets/Audio.
 
 These are stand-ins, not final audio: the point is that every hook in the game
 has something audible wired to it, so the mix can be judged and the real files
@@ -20,7 +20,7 @@ import wave
 
 RATE = 44100
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       "Flappy Voice", "Assets", "Audio")
+                       "Assets", "Audio")
 
 
 def midi_hz(midi):
@@ -141,47 +141,6 @@ def crash():
     write_wav("sfx_crash.wav", buf)
 
 
-# ------------------------------------------------------- music: start + game
-
-def bgm_game():
-    """Four bars at 104 BPM, C major pentatonic. Loops on the bar.
-
-    Used for both the start screen and the run, so it must be pleasant at zero
-    tension: no drums, no build, nothing that wants to resolve.
-    """
-    bpm = 104.0
-    beat = 60.0 / bpm
-    bars = 4
-    total = bars * 4 * beat
-    buf = buffer(total)
-
-    # Bass, one note per bar: C - A - F - G
-    for bar, midi in enumerate((36, 33, 41, 43)):
-        add_tone(buf, bar * 4 * beat, 4 * beat, midi_hz(midi), 0.34, triangle,
-                 attack=0.02, decay=0.5, sustain=0.55, release=0.3)
-
-    # Pentatonic arpeggio over the top, eighth notes, phrase per bar.
-    phrases = (
-        (72, 76, 79, 76, 84, 79, 76, 72),
-        (69, 72, 76, 72, 81, 76, 72, 69),
-        (77, 81, 84, 81, 88, 84, 81, 77),
-        (79, 83, 86, 83, 79, 76, 72, 74),
-    )
-    for bar, phrase in enumerate(phrases):
-        for step, midi in enumerate(phrase):
-            at = (bar * 4 + step * 0.5) * beat
-            add_tone(buf, at, beat * 0.46, midi_hz(midi), 0.20, sine,
-                     attack=0.006, decay=0.10, sustain=0.42, release=0.10)
-
-    # Sparse high counter-melody every other bar, so the loop does not feel
-    # like a metronome once it has gone round three times.
-    for bar, midi in ((1, 88), (3, 91)):
-        add_tone(buf, (bar * 4 + 2) * beat, beat * 1.6, midi_hz(midi), 0.10, sine,
-                 attack=0.05, decay=0.4, sustain=0.35, release=0.4)
-
-    write_wav("bgm_game.wav", buf)
-
-
 # --------------------------------------------------------- music: game over
 
 def bgm_gameover():
@@ -210,5 +169,4 @@ if __name__ == "__main__":
     os.makedirs(OUT_DIR, exist_ok=True)
     score()
     crash()
-    bgm_game()
     bgm_gameover()

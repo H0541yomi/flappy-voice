@@ -5,11 +5,13 @@ using FlappyVoice.Config;
 using FlappyVoice.Gameplay;
 using FlappyVoice.Platform;
 using FlappyVoice.UI;
+using FlappyVoice.Video;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -29,11 +31,101 @@ namespace FlappyVoice.Editor
         private const string AudioFolder = "Assets/Audio";
         private const string BirdSpritePath = "Assets/Art/Placeholder/Bird.png";
         private const string PipeSpritePath = "Assets/Art/Placeholder/PipeSection.png";
+        // Generated art. Each falls back to its procedural placeholder when absent, so a partial
+        // art drop still builds a runnable scene.
+        private const string TubeSpritePath = "Assets/Art/Trumpets/tube.png";
+        private const string BellTopSpritePath = "Assets/Art/Trumpets/bell_top.png";
+        private const string BellBottomSpritePath = "Assets/Art/Trumpets/bell_bottom.png";
+        private const string BirdIdleSpritePath = "Assets/Art/Bird/bird_idle.png";
+        private const string BirdSingSpritePath = "Assets/Art/Bird/bird_sing.png";
+        private const string BirdDeadSpritePath = "Assets/Art/Bird/bird_dead.png";
+        private const string BirdFlashSpritePath = "Assets/Art/Bird/bird_flash.png";
+        private const string SkySpritePath = "Assets/Art/Bg/sky.png";
+        private static readonly string[] NoteSpritePaths =
+        {
+            "Assets/Art/Fx/note_a.png", "Assets/Art/Fx/note_b.png", "Assets/Art/Fx/note_c.png",
+        };
+        private const string TunerPillSpritePath = "Assets/Art/Ui/tuner_pill.png";
+        private const string SafeBandSpritePath = "Assets/Art/Ui/safe_band.png";
+        private const string NeedleSpritePath = "Assets/Art/Ui/needle.png";
+        private const string SignSpritePath = "Assets/Art/Ui/start_sign.png";
+        private const string ButtonSpritePath = "Assets/Art/Ui/button.png";
+        private const string HeartFullSpritePath = "Assets/Art/Ui/heart_full.png";
+        private const string HeartEmptySpritePath = "Assets/Art/Ui/heart_empty.png";
+        private const string TitleMaterialPath = "Assets/Art/Ui/SignTitle.mat";
+        private const string WebCamMaterialPath = "Assets/Art/Ui/WebCamFeed.mat";
+
+        // Between far (-90) and mid (-80): the two nearest scenery bands frame the feed, and the
+        // sky, clouds and far horizon it covers are exactly the layers there is no point drawing
+        // behind an opaque video.
+        private const int WebCamSortingOrder = -85;
+
+        // Scenery, back to front: sprite, world Y of the layer's centre, vertical scale, scroll
+        // factor against the pipe speed, sorting order. Sky is handled separately - it does not
+        // tile or scroll.
+        //
+        // The layers are drawn at their own aspect, so their heights are whatever the art is; the
+        // scales exist to make each band overlap the one below it. Both edges are ragged
+        // silhouettes, and a layer that merely meets the next one lets the sky show through the
+        // notches in between.
+        // Wider than any phone and wider than a maximised Game view on a 16:10 laptop. Coverage
+        // is cheap - a few extra sprites - and running out of it shows the camera's clear colour
+        // down the sides of the screen.
+        private const float WidestSupportedAspect = 2.4f;
+
+        private static readonly (string Path, float CenterY, float Scale, float Factor, int Order)[] ParallaxLayers =
+        {
+            ("Assets/Art/Bg/clouds.png", 3.2f, 1.00f, 0.03f, -95),
+            ("Assets/Art/Bg/far.png", 0.55f, 1.10f, 0.06f, -90),
+            ("Assets/Art/Bg/mid.png", -1.30f, 1.15f, 0.12f, -80),
+            ("Assets/Art/Bg/near.png", -3.50f, 1.30f, 0.22f, -70),
+        };
         private const int PixelsPerUnit = 64;
 
         private static readonly Vector2 ReferenceResolution = new Vector2(1080f, 1920f);
+
+        // Hearts sit in the bottom-right corner, clear of the tuner strip at the top and of the
+        // score. The margin is generous because phones round that corner off.
+        private const float HeartSize = 96f;
+        private const float HeartSpacing = 12f;
+        private const float HeartMargin = 56f;
         private static readonly Color SkyColor = new Color(0.16f, 0.20f, 0.34f, 1f);
-        private static readonly Color CardColor = new Color(0.10f, 0.12f, 0.20f, 1f);
+
+        // start_sign.png is 1024x1866 and is deliberately NOT 9-sliced: the leaf-and-flower
+        // clusters sit too far into two of its corners for any border to hold them, so a stretch
+        // would smear them. Both panels are therefore authored at the sprite's own aspect.
+        private const float SignAspect = 1866f / 1024f;
+        private static readonly Vector2 SignSize = new Vector2(860f, 860f * SignAspect);
+
+        // Measured off the sprite, as fractions of the sign's height: the band where the cream
+        // face is at least 77% of the sign's width. Outside it the deckled edge is tapering in,
+        // so anything placed there hangs off the parchment - which is what put the Share button
+        // half over the torn bottom edge. Content lives between these two.
+        private const float SignFaceTop = 0.219f * (860f * SignAspect);
+        private const float SignFaceBottom = 0.812f * (860f * SignAspect);
+
+        // The tuner strip is a compact pill at the top-centre, not a full-width bar: at full
+        // width it covered the whole top of the screen and the bird disappeared behind it
+        // whenever it flew high. These three drive both the strip and the camera - BuildCamera
+        // reads TunerScreenFraction to keep the playfield underneath.
+        private const float TunerTopMarginPx = 20f;
+        private const float TunerBarHeightPx = 180f;
+        private const float TunerBarWidthPx = 600f;
+        private const float TunerReadoutRowPx = 44f;
+
+        // Canvas match mode is height, so canvas pixels ARE a fixed fraction of the view.
+        private const float TunerScreenFraction =
+            (TunerTopMarginPx + TunerBarHeightPx) / 1920f;
+
+        // Room demanded between the top of the playfield and the bottom of the strip, on top of
+        // whichever is taller there - the bird or the gap opening.
+        private const float HudClearanceUnits = 0.25f;
+
+        // Ink on parchment. White text is invisible on the sign, so nothing placed on one may keep
+        // the default NewText colour.
+        private static readonly Color InkColor = new Color(0.21f, 0.24f, 0.33f, 1f);
+        private static readonly Color MutedInkColor = new Color(0.38f, 0.42f, 0.50f, 1f);
+        private static readonly Color ButtonLabelColor = new Color(1f, 0.97f, 0.90f, 1f);
 
         private static TMP_FontAsset cachedFont;
         private static bool fontResolved;
@@ -59,8 +151,8 @@ namespace FlappyVoice.Editor
             EnsureFolder(AudioFolder);
 
             GameConfig config = EnsureConfig();
-            Sprite birdSprite = EnsureBirdSprite();
-            Sprite pipeSprite = EnsurePipeSprite();
+            Sprite birdSprite = LoadSpriteOr(BirdIdleSpritePath, EnsureBirdSprite);
+            Sprite pipeSprite = LoadSpriteOr(TubeSpritePath, EnsurePipeSprite);
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -70,9 +162,13 @@ namespace FlappyVoice.Editor
             GameObject pipePrefab = BuildPipePrefab(config, pipeSprite);
             config = ReloadConfig(config);
             Camera camera = BuildCamera(config);
+            ParallaxBackground background = BuildBackground(config, camera);
+            WebCam webCamBackground = BuildWebCamBackground(background.transform, camera);
+            SingingFx singingFx = BuildSingingFx();
             GameObject managersGo = new GameObject("Managers");
             GameStateManager stateManager = managersGo.AddComponent<GameStateManager>();
             ScoreManager scoreManager = managersGo.AddComponent<ScoreManager>();
+            LivesManager livesManager = managersGo.AddComponent<LivesManager>();
             ShareService shareService = managersGo.AddComponent<ShareService>();
 
             GameObject audioGo = new GameObject("Audio");
@@ -91,6 +187,7 @@ namespace FlappyVoice.Editor
 
             Canvas canvas = BuildCanvas(camera);
             HudUI hud = BuildHud(canvas.transform);
+            LivesUI livesUI = BuildLivesUI(canvas.transform, config);
             TunerBarUI tunerBar = BuildTunerBar(canvas.transform);
             EndScreenUI endScreen = BuildEndScreen(canvas.transform, camera);
 
@@ -99,13 +196,17 @@ namespace FlappyVoice.Editor
             voiceHeight.Configure(config, pitchTracker);
             player.Configure(config, stateManager, voiceHeight, attractPilot);
             hud.Configure(scoreManager, stateManager);
+            // Configured here only so the authored row shows a full set of hearts: LivesUI renders
+            // whatever LivesManager currently holds, and an unconfigured one holds zero.
+            livesManager.Configure(config, stateManager);
+            livesUI.Configure(livesManager, stateManager);
             tunerBar.Configure(config, voiceHeight, pipeSpawner, player, stateManager);
             endScreen.Configure(stateManager, scoreManager, shareService);
 
             UnityEngine.Object[] candidates =
             {
-                config, stateManager, scoreManager, shareService, microphoneInput, pitchTracker, gameAudio,
-                voiceHeight, attractPilot, pipeSpawner, player, camera, hud, tunerBar, endScreen,
+                config, stateManager, scoreManager, livesManager, shareService, microphoneInput, pitchTracker, gameAudio,
+                voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, player, camera, hud, livesUI, tunerBar, endScreen,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
 
@@ -118,8 +219,12 @@ namespace FlappyVoice.Editor
             AutoWireByType(voiceHeight, candidates);
             AutoWireByType(attractPilot, candidates);
             AutoWireByType(pipeSpawner, candidates);
+            AutoWireByType(background, candidates);
+            AutoWireByType(webCamBackground, candidates);
+            AutoWireByType(singingFx, candidates);
             AutoWireByType(player, candidates);
             AutoWireByType(hud, candidates);
+            AutoWireByType(livesUI, candidates);
             AutoWireByType(tunerBar, candidates);
             AutoWireByType(endScreen, candidates);
 
@@ -137,8 +242,8 @@ namespace FlappyVoice.Editor
             GameObject bootstrapGo = new GameObject("GameBootstrap");
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
-                pitchTracker, gameAudio, voiceHeight, attractPilot, pipeSpawner, player, camera, hud,
-                tunerBar, endScreen);
+                pitchTracker, gameAudio, voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, livesManager, player, camera, hud,
+                livesUI, tunerBar, endScreen);
             EditorUtility.SetDirty(bootstrap);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -187,13 +292,20 @@ namespace FlappyVoice.Editor
             GameObject go = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             go.tag = "MainCamera";
             Camera camera = go.GetComponent<Camera>();
-            float minY = config.PlayfieldMinY;
-            float maxY = config.PlayfieldMaxY;
-            float centerY = (minY + maxY) * 0.5f;
             camera.orthographic = true;
-            // Edge notes put a gap centre right on the playfield bound, so keep a margin or offsets 0
-            // and 12 land on the screen edge with half the gap and half the note letter cut off.
-            camera.orthographicSize = Mathf.Max(1f, (maxY - minY) * 0.5f + EdgeNoteMarginUnits);
+
+            // Edge notes put a gap centre right on the playfield bound, so the bottom keeps a
+            // margin or offset 0 lands on the screen edge with half its gap cut off. The TOP has
+            // to clear the tuner strip as well, and how much world that strip covers depends on
+            // the camera size we are solving for - HudLayout does that in one step, and
+            // HudLayoutTests pins that the playfield really does end below the strip.
+            float topClearance = Mathf.Max(config.PlayerBodyRadiusUnits,
+                config.PipeGapSizeAtDifficulty(0f) * 0.5f) + HudClearanceUnits;
+            HudLayout.CameraForPlayfield(config.PlayfieldMinY, config.PlayfieldMaxY,
+                EdgeNoteMarginUnits, topClearance, TunerScreenFraction,
+                out float orthographicSize, out float centerY);
+
+            camera.orthographicSize = orthographicSize;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = SkyColor;
             camera.nearClipPlane = 0.1f;
@@ -220,9 +332,21 @@ namespace FlappyVoice.Editor
             body.useFullKinematicContacts = true;
 
             CircleCollider2D collider = go.AddComponent<CircleCollider2D>();
-            collider.radius = 0.42f;
+            collider.radius = config.PlayerBodyRadiusUnits;
 
-            return go.AddComponent<PlayerController>();
+            PlayerController player = go.AddComponent<PlayerController>();
+
+            // The three poses share one silhouette and one PPU, so swapping the sprite moves
+            // nothing: the bird changes shape in place.
+            SerializedObject so = new SerializedObject(player);
+            SetRef(so, "_renderer", renderer);
+            SetRef(so, "_idleSprite", birdSprite);
+            SetRef(so, "_singSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdSingSpritePath));
+            SetRef(so, "_deadSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdDeadSpritePath));
+            SetRef(so, "_flashSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdFlashSpritePath));
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return player;
         }
 
         private static GameObject BuildPipePrefab(GameConfig config, Sprite pipeSprite)
@@ -243,6 +367,13 @@ namespace FlappyVoice.Editor
             GameObject bottom = BuildPipeSection("BottomSection", root.transform, pipeSprite,
                 -((gap * 0.5f) + (sectionHeight * 0.5f)));
 
+            // Parented to the root, not to a section: sections are 1x1 quads that Pipe.Setup
+            // stretches by localScale, and a child would inherit that stretch.
+            GameObject topBell = BuildBell("TopBell", root.transform,
+                AssetDatabase.LoadAssetAtPath<Sprite>(BellTopSpritePath), gap * 0.5f);
+            GameObject bottomBell = BuildBell("BottomBell", root.transform,
+                AssetDatabase.LoadAssetAtPath<Sprite>(BellBottomSpritePath), -gap * 0.5f);
+
             GameObject gapTrigger = new GameObject("GapTrigger");
             gapTrigger.transform.SetParent(root.transform, false);
             BoxCollider2D gapCollider = gapTrigger.AddComponent<BoxCollider2D>();
@@ -250,7 +381,7 @@ namespace FlappyVoice.Editor
             gapCollider.size = new Vector2(0.25f, gap);
 
             Pipe pipe = root.AddComponent<Pipe>();
-            WirePipeSections(pipe, top, bottom, gapTrigger);
+            WirePipeSections(pipe, top, bottom, gapTrigger, topBell, bottomBell);
 
             PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
             UnityEngine.Object.DestroyImmediate(root);
@@ -262,6 +393,234 @@ namespace FlappyVoice.Editor
                 Debug.LogWarning($"[SceneBuilder] failed to load pipe prefab at {PipePrefabPath}");
             }
             return prefab;
+        }
+
+        // A bell sprite is authored at true world size (256 px per unit) with its pivot on the
+        // flare rim, so it is placed at scale 1 straight onto the gap edge.
+        private static GameObject BuildBell(string name, Transform parent, Sprite sprite, float y)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(0f, y, 0f);
+            go.transform.localScale = Vector3.one;
+
+            SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.drawMode = SpriteDrawMode.Simple;
+            renderer.sortingOrder = 6;
+            return go;
+        }
+
+        private static SingingFx BuildSingingFx()
+        {
+            GameObject go = new GameObject("SingingFx");
+            SingingFx fx = go.AddComponent<SingingFx>();
+
+            Sprite[] notes = new Sprite[NoteSpritePaths.Length];
+            for (int i = 0; i < notes.Length; i++)
+            {
+                notes[i] = AssetDatabase.LoadAssetAtPath<Sprite>(NoteSpritePaths[i]);
+                if (notes[i] == null)
+                {
+                    Debug.LogWarning($"[SceneBuilder] missing {NoteSpritePaths[i]}");
+                }
+            }
+
+            SerializedObject so = new SerializedObject(fx);
+            SetRefArray(so, "_noteSprites", notes);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return fx;
+        }
+
+        private static ParallaxBackground BuildBackground(GameConfig config, Camera camera)
+        {
+            GameObject root = new GameObject("Background");
+            ParallaxBackground parallax = root.AddComponent<ParallaxBackground>();
+
+            float halfHeight = camera.orthographicSize;
+            // Screen.* is meaningless in batch mode and only ever describes the machine that ran
+            // the build, so coverage is sized for the widest aspect the game could be shown at
+            // rather than measured. Portrait phones are ~0.5; a laptop Game view can be past 2.
+            float halfWidth = halfHeight * WidestSupportedAspect;
+            float coverWidth = halfWidth * 2f;
+
+            Sprite sky = AssetDatabase.LoadAssetAtPath<Sprite>(SkySpritePath);
+            if (sky != null)
+            {
+                GameObject skyGo = new GameObject("Sky");
+                skyGo.transform.SetParent(root.transform, false);
+                SpriteRenderer sr = skyGo.AddComponent<SpriteRenderer>();
+                sr.sprite = sky;
+                sr.sortingOrder = -100;
+                Vector2 size = sky.bounds.size;
+                // Centred on the CAMERA, not on the origin: the camera sits above the middle of
+                // the playfield to make room for the tuner strip, and a sky hung at y = 0 left a
+                // band of the camera's clear colour along the top of the screen.
+                skyGo.transform.localPosition = new Vector3(0f, camera.transform.position.y, 0f);
+                skyGo.transform.localScale = new Vector3(
+                    coverWidth / Mathf.Max(0.001f, size.x),
+                    (halfHeight * 2.1f) / Mathf.Max(0.001f, size.y), 1f);
+            }
+
+            var layers = new Transform[ParallaxLayers.Length];
+            var factors = new float[ParallaxLayers.Length];
+            var widths = new float[ParallaxLayers.Length];
+            var halfSpans = new float[ParallaxLayers.Length];
+
+            for (int i = 0; i < ParallaxLayers.Length; i++)
+            {
+                (string path, float centerY, float scale, float factor, int order) = ParallaxLayers[i];
+                Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+                if (sprite == null)
+                {
+                    Debug.LogWarning($"[SceneBuilder] missing parallax sprite {path}");
+                    continue;
+                }
+
+                float tileWidth = sprite.bounds.size.x;
+                GameObject layerGo = new GameObject("Layer" + i);
+                layerGo.transform.SetParent(root.transform, false);
+                layerGo.transform.localPosition = new Vector3(0f, centerY, 0f);
+                layerGo.transform.localScale = new Vector3(scale, scale, 1f);
+
+                // An odd count laid out from -k to +k keeps the row centred on the camera; an
+                // even one is half a tile off to one side, which is half the coverage wasted on
+                // the wrong side. The extra tile of reach absorbs the scroll, which only ever
+                // moves left and can be a full tile out just before it wraps.
+                float step = tileWidth * scale;
+                int k = Mathf.CeilToInt((halfWidth + step) / step);
+                int copies = 2 * k + 1;
+                for (int c = 0; c < copies; c++)
+                {
+                    GameObject tile = new GameObject("Tile" + c);
+                    tile.transform.SetParent(layerGo.transform, false);
+                    tile.transform.localPosition = new Vector3((c - k) * tileWidth, 0f, 0f);
+                    SpriteRenderer sr = tile.AddComponent<SpriteRenderer>();
+                    sr.sprite = sprite;
+                    sr.sortingOrder = order;
+                }
+
+                layers[i] = layerGo.transform;
+                factors[i] = factor;
+                widths[i] = tileWidth * scale;
+                halfSpans[i] = (k + 0.5f) * step;
+            }
+
+            SerializedObject so = new SerializedObject(parallax);
+            SetRefArray(so, "_layers", layers);
+            SetFloatArray(so, "_layerSpeedFactors", factors);
+            SetFloatArray(so, "_layerTileWidths", widths);
+            SetFloatArray(so, "_layerHalfSpans", halfSpans);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return parallax;
+        }
+
+        // Sits inside Background so it travels with the scenery, but it does not scroll: it is
+        // pinned to the view, and ParallaxBackground only moves the Layer* children.
+        private static WebCam BuildWebCamBackground(Transform backgroundRoot, Camera camera)
+        {
+            Material feed = EnsureWebCamMaterial();
+            if (feed == null)
+            {
+                return null;
+            }
+
+            GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "WebCamBackground";
+            // CreatePrimitive ships a collider; scenery the bird could hit is not scenery.
+            UnityEngine.Object.DestroyImmediate(quad.GetComponent<MeshCollider>());
+            quad.transform.SetParent(backgroundRoot, false);
+
+            // Centred on the CAMERA, not the origin, for the reason Sky is: the camera sits above
+            // the middle of the playfield to clear the tuner strip.
+            quad.transform.localPosition = new Vector3(0f, camera.transform.position.y, 0f);
+            // Screen.* is meaningless in batch mode, so this is the authored portrait aspect only;
+            // WebCam.FitQuadToView replaces it with the real one on the first frame it draws.
+            float viewHeight = camera.orthographicSize * 2f;
+            quad.transform.localScale = new Vector3(
+                viewHeight * (ReferenceResolution.x / ReferenceResolution.y), viewHeight, 1f);
+
+            MeshRenderer quadRenderer = quad.GetComponent<MeshRenderer>();
+            // sharedMaterial, never material: the latter instantiates, and an instance created at
+            // edit time is written into the scene as a second copy nothing can find again.
+            quadRenderer.sharedMaterial = feed;
+            quadRenderer.sortingOrder = WebCamSortingOrder;
+            quadRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            quadRenderer.receiveShadows = false;
+            // Off until a frame arrives. A permission the player refuses then leaves the painted
+            // sky untouched instead of a white slab across it.
+            quadRenderer.enabled = false;
+
+            WebCam webCam = quad.AddComponent<WebCam>();
+            SerializedObject so = new SerializedObject(webCam);
+            SetRef(so, "feedMaterial", feed);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return webCam;
+        }
+
+        private static Material EnsureWebCamMaterial()
+        {
+            Shader unlit = Shader.Find("Universal Render Pipeline/Unlit");
+            if (unlit == null)
+            {
+                Debug.LogWarning("[SceneBuilder] URP/Unlit missing; no camera background built.");
+                return null;
+            }
+
+            Material feed = AssetDatabase.LoadAssetAtPath<Material>(WebCamMaterialPath);
+            bool created = feed == null;
+            if (created)
+            {
+                feed = new Material(unlit);
+            }
+            else
+            {
+                feed.shader = unlit;
+            }
+
+            feed.name = "WebCamFeed";
+            feed.SetColor("_BaseColor", Color.white);
+
+            // A MeshRenderer only joins the sprites' sorting list once its material is in the
+            // transparent queue. Left opaque it draws in the opaque pass, ahead of every sprite
+            // in the scene, and sortingOrder is ignored entirely - which looks like the sorting
+            // order was wrong rather than the surface type.
+            feed.SetFloat("_Surface", 1f);
+            feed.SetFloat("_Blend", 0f);
+            feed.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            feed.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            feed.SetFloat("_ZWrite", 0f);
+            feed.SetOverrideTag("RenderType", "Transparent");
+            feed.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            feed.renderQueue = (int)RenderQueue.Transparent;
+
+            if (created)
+            {
+                AssetDatabase.CreateAsset(feed, WebCamMaterialPath);
+            }
+            EditorUtility.SetDirty(feed);
+            return feed;
+        }
+
+        private static void SetFloatArray(SerializedObject so, string field, float[] values)
+        {
+            SerializedProperty property = so.FindProperty(field);
+            if (property == null)
+            {
+                Debug.LogWarning($"[SceneBuilder] no float array field '{field}' on {so.targetObject}");
+                return;
+            }
+            property.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+            {
+                property.GetArrayElementAtIndex(i).floatValue = values[i];
+            }
+        }
+
+        private static Sprite LoadSpriteOr(string path, System.Func<Sprite> fallback)
+        {
+            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            return sprite != null ? sprite : fallback();
         }
 
         // Pipe.Setup sizes each section purely through localScale, so the section must stay a
@@ -276,7 +635,7 @@ namespace FlappyVoice.Editor
             SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.drawMode = SpriteDrawMode.Simple;
-            renderer.color = new Color(0.36f, 0.78f, 0.44f, 1f);
+            renderer.color = Color.white;
             renderer.sortingOrder = 5;
 
             BoxCollider2D collider = go.AddComponent<BoxCollider2D>();
@@ -338,38 +697,101 @@ namespace FlappyVoice.Editor
             Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -352f),
                 new Vector2(700f, 220f));
 
-            GameObject singGroupGo = NewUI("SingToStart", root.transform);
+            GameObject singGroupGo = NewUI("StartScreen", root.transform);
             Stretch(singGroupGo);
             CanvasGroup singGroup = singGroupGo.AddComponent<CanvasGroup>();
             singGroup.interactable = false;
             singGroup.blocksRaycasts = false;
 
-            GameObject singPlate = NewUI("Plate", singGroupGo.transform);
-            Place(singPlate, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
-                new Vector2(920f, 260f));
+            GameObject singPlate = NewUI("StartSign", singGroupGo.transform);
+            Place(singPlate, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, SignSize);
 
-            Image singBackdrop = NewImage("Backdrop", singPlate.transform, new Color(0f, 0f, 0f, 0.62f));
+            Image singBackdrop = NewImage("Parchment", singPlate.transform, new Color(0.93f, 0.88f, 0.74f, 1f));
             Stretch(singBackdrop.gameObject);
+            ApplySlicedSprite(singBackdrop, SignSpritePath, Color.white);
 
-            TextMeshProUGUI singLabel = NewText("SingToStartLabel", singPlate.transform, "Sing to start", 110f,
+            TextMeshProUGUI singLabel = NewText("SingToStartLabel", singPlate.transform, "SING TO PLAY", 70f,
                 TextAlignmentOptions.Center);
-            Stretch(singLabel.gameObject);
-            singLabel.fontStyle = FontStyles.Bold;
-            singLabel.characterSpacing = 4f;
+            // 660 wide, not the sign's 780: the deckled border eats ~7% of each side and a title
+            // sized to the full rect runs out over the torn edge.
+            Place(singLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -350f),
+                new Vector2(700f, 125f));
+            ApplyTitleFace(singLabel);
+            singLabel.characterSpacing = 2f;
+            singLabel.color = InkColor;
+
+            BuildTunerLegend(singPlate.transform, new Vector2(0f, -580f), new Vector2(640f, 204f));
+
+            TextMeshProUGUI singHint = NewText("Hint", singPlate.transform,
+                "Hit the right note\nto keep flying!", 62f, TextAlignmentOptions.Center);
+            Place(singHint.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -845f),
+                new Vector2(700f, 200f));
+            singHint.color = MutedInkColor;
+
+            Image singBird = NewImage("Bird", singPlate.transform, Color.white);
+            ApplySlicedSprite(singBird, BirdSingSpritePath, Color.white);
+            Place(singBird.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-34f, -1075f),
+                new Vector2(250f, 205f));
 
             SerializedObject so = new SerializedObject(hud);
             SetRef(so, "scoreGroup", scoreGroup);
             SetRef(so, "scoreLabel", scoreLabel);
             SetRef(so, "singToStartGroup", singGroup);
+            SetRef(so, "singToStartHint", singHint);
             SetRef(so, "singToStartPulseTarget", (RectTransform)singPlate.transform);
             so.ApplyModifiedPropertiesWithoutUndo();
             return hud;
         }
 
-        // Two sources, not one: the music bed is a looping stream whose position must survive the
-        // attract -> playing handoff, and the one-shots have to be able to overlap it and each
-        // other. Clips are looked up by path rather than passed in, so adding a real file over a
-        // placeholder needs no change here.
+        // The count comes from GameConfig, not from a constant here: a retune of PlayerLives must
+        // not be able to leave a row of hearts that disagrees with what the run actually grants.
+        private static LivesUI BuildLivesUI(Transform parent, GameConfig config)
+        {
+            GameObject root = NewUI("LivesHud", parent);
+            Stretch(root);
+            LivesUI lives = root.AddComponent<LivesUI>();
+            CanvasGroup group = root.AddComponent<CanvasGroup>();
+            group.interactable = false;
+            group.blocksRaycasts = false;
+
+            int count = config != null ? Mathf.Max(1, config.PlayerLives) : 3;
+            float rowWidth = (count * HeartSize) + ((count - 1) * HeartSpacing);
+
+            GameObject row = NewUI("Hearts", root.transform);
+            Place(row, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-HeartMargin, HeartMargin),
+                new Vector2(rowWidth, HeartSize));
+
+            Sprite full = AssetDatabase.LoadAssetAtPath<Sprite>(HeartFullSpritePath);
+            Sprite empty = AssetDatabase.LoadAssetAtPath<Sprite>(HeartEmptySpritePath);
+            if (full == null || empty == null)
+            {
+                Debug.LogWarning("[SceneBuilder] missing heart sprites - run python3 Tools/key-ui-art.py");
+            }
+
+            Image[] hearts = new Image[count];
+            for (int i = 0; i < count; i++)
+            {
+                Image heart = NewImage("Heart" + i, row.transform, Color.white);
+                // Stepped from the row's left edge, so the row fills leftwards from the corner
+                // margin however many lives the config grants.
+                Place(heart.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+                    new Vector2(i * (HeartSize + HeartSpacing), 0f), new Vector2(HeartSize, HeartSize));
+                heart.sprite = full;
+                hearts[i] = heart;
+            }
+
+            SerializedObject so = new SerializedObject(lives);
+            SetRef(so, "group", group);
+            SetRefArray(so, "hearts", hearts);
+            SetRef(so, "fullSprite", full);
+            SetRef(so, "emptySprite", empty);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return lives;
+        }
+
+        // Two sources, not one: the game-over bed is a looping stream, and the one-shots have to be
+        // able to overlap it and each other. Clips are looked up by path rather than passed in, so
+        // adding a real file over a placeholder needs no change here.
         private static GameAudio BuildGameAudio(Transform parent)
         {
             GameObject root = new GameObject("GameAudio");
@@ -383,7 +805,6 @@ namespace FlappyVoice.Editor
             SerializedObject so = new SerializedObject(audio);
             SetRef(so, "musicSource", music);
             SetRef(so, "sfxSource", sfx);
-            SetRef(so, "gameMusic", LoadClip("bgm_game.wav"));
             SetRef(so, "gameOverMusic", LoadClip("bgm_gameover.wav"));
             SetRef(so, "scoreSfx", LoadClip("sfx_score.wav"));
             SetRef(so, "crashSfx", LoadClip("sfx_crash.wav"));
@@ -420,11 +841,11 @@ namespace FlappyVoice.Editor
         // error - and a frame costs one transform move instead of a relayout of every tick.
         private static TunerBarUI BuildTunerBar(Transform canvas)
         {
-            const float barHeight = 300f;
+            const float barHeight = TunerBarHeightPx;
             // Ticks own the top of the strip, letters the middle, readouts the bottom row, so
             // nothing in the dial can end up drawn over the note or cents read-out.
-            const float readoutRowHeight = 56f;
-            const float topMargin = 24f;
+            const float readoutRowHeight = TunerReadoutRowPx;
+            const float topMargin = TunerTopMarginPx;
             const float dialSemitones = 9f;
             float px = TunerBarUI.PixelsPerSemitone;
 
@@ -434,17 +855,15 @@ namespace FlappyVoice.Editor
             rootGroup.interactable = false;
             rootGroup.blocksRaycasts = false;
 
-            // Stretched across the full width so the strip never leaves a gap at the screen edges,
-            // with only its height authored.
-            RectTransform rootRect = (RectTransform)root.transform;
-            rootRect.anchorMin = new Vector2(0f, 1f);
-            rootRect.anchorMax = new Vector2(1f, 1f);
-            rootRect.pivot = new Vector2(0.5f, 1f);
-            rootRect.offsetMax = new Vector2(0f, -topMargin);
-            rootRect.offsetMin = new Vector2(0f, -(topMargin + barHeight));
+            // A pill at the top-centre, NOT stretched across the width. The dial behind it is
+            // still nine semitones wide and still clipped by the viewport, so the strip shows
+            // about two and a half notes at a time - which is all a tuner needs to be read.
+            Place(root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -topMargin),
+                new Vector2(TunerBarWidthPx, barHeight));
 
             Image backdrop = NewImage("Backdrop", root.transform, new Color(0.04f, 0.05f, 0.09f, 0.72f));
             Stretch(backdrop.gameObject);
+            ApplySlicedSprite(backdrop, TunerPillSpritePath, Color.white);
 
             // The dial is wider than the screen at portrait aspect, so it has to be clipped rather
             // than left to spill its outer letters over the rest of the HUD.
@@ -456,6 +875,9 @@ namespace FlappyVoice.Editor
             // width and position are the gap's business, not the current note's. Sized at runtime,
             // so whatever is authored here is only what shows in the editor.
             Image safeBand = NewImage("SafeBand", viewport.transform, new Color(0.36f, 0.85f, 0.51f, 0.22f));
+            // Sprite only. The band's WIDTH is the safe-pitch window and TunerBarUI sets it every
+            // frame from the gap and the bird's radius - authoring a size here would be a lie.
+            ApplySlicedSprite(safeBand, SafeBandSpritePath, new Color(1f, 1f, 1f, 0.3f));
             Place(safeBand.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero,
                 new Vector2(px * 2f, barHeight - readoutRowHeight));
 
@@ -472,27 +894,31 @@ namespace FlappyVoice.Editor
             int center = TunerBarUI.NoteSlotCount / 2;
             for (int i = 0; i < labels.Length; i++)
             {
-                TextMeshProUGUI label = NewText("Note" + i, dialGo.transform, "A", 104f,
+                TextMeshProUGUI label = NewText("Note" + i, dialGo.transform, "A", 68f,
                     TextAlignmentOptions.Center);
                 Place(label.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                    new Vector2((i - center) * px, readoutRowHeight + 8f), new Vector2(px * 0.92f, 128f));
+                    new Vector2((i - center) * px, readoutRowHeight + 4f), new Vector2(px * 0.92f, 88f));
                 label.fontStyle = FontStyles.Bold;
                 labels[i] = label;
             }
 
-            Image needle = NewImage("Needle", root.transform, new Color(0.93f, 0.27f, 0.31f, 1f));
+            // Wider than the line it draws: needle.png is a 6 px core inside a soft glow, and at
+            // the old 6 px rect the glow would be a single pixel. TunerBarUI tints this every
+            // frame, which is why the sprite is white.
+            Image needle = NewImage("Needle", root.transform, Color.white);
+            ApplySlicedSprite(needle, NeedleSpritePath, Color.white);
             Place(needle.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f),
-                new Vector2(6f, barHeight - readoutRowHeight - 12f));
+                new Vector2(26f, barHeight - readoutRowHeight - 12f));
 
-            TextMeshProUGUI noteReadout = NewText("NoteReadout", root.transform, "--", 44f,
+            TextMeshProUGUI noteReadout = NewText("NoteReadout", root.transform, "--", 32f,
                 TextAlignmentOptions.Left);
-            Place(noteReadout.gameObject, Vector2.zero, Vector2.zero, new Vector2(28f, 4f),
-                new Vector2(300f, readoutRowHeight));
+            Place(noteReadout.gameObject, Vector2.zero, Vector2.zero, new Vector2(22f, 4f),
+                new Vector2(220f, readoutRowHeight));
 
-            TextMeshProUGUI centsReadout = NewText("CentsReadout", root.transform, string.Empty, 44f,
+            TextMeshProUGUI centsReadout = NewText("CentsReadout", root.transform, string.Empty, 32f,
                 TextAlignmentOptions.Right);
-            Place(centsReadout.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-28f, 4f),
-                new Vector2(300f, readoutRowHeight));
+            Place(centsReadout.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-22f, 4f),
+                new Vector2(220f, readoutRowHeight));
 
             SerializedObject so = new SerializedObject(tuner);
             SetRef(so, "rootGroup", rootGroup);
@@ -505,6 +931,64 @@ namespace FlappyVoice.Editor
             SetRefArray(so, "noteLabels", labels);
             so.ApplyModifiedPropertiesWithoutUndo();
             return tuner;
+        }
+
+        // 9-slice so the middle stretches and the ends keep their shape. Falls back to the flat
+        // colour the panel was authored with when the art is not present.
+        private static void ApplySlicedSprite(Image image, string path, Color tint)
+        {
+            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            if (sprite == null)
+            {
+                Debug.LogWarning($"[SceneBuilder] missing UI sprite {path}, keeping the flat fill");
+                return;
+            }
+            image.sprite = sprite;
+            image.type = sprite.border == Vector4.zero ? Image.Type.Simple : Image.Type.Sliced;
+            image.color = tint;
+        }
+
+        // A still life of the tuner strip for the start sign - not the tuner itself, which stays
+        // hidden until a run starts because before the anchor exists it has nothing true to say.
+        // Built from the same three sprites so the legend cannot drift from what it explains.
+        private static void BuildTunerLegend(Transform parent, Vector2 position, Vector2 size)
+        {
+            GameObject legend = NewUI("TunerLegend", parent);
+            Place(legend, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), position, size);
+
+            Image pill = NewImage("Pill", legend.transform, new Color(0.10f, 0.12f, 0.18f, 0.94f));
+            Stretch(pill.gameObject);
+            ApplySlicedSprite(pill, TunerPillSpritePath, Color.white);
+
+            Image band = NewImage("SafeBand", legend.transform, new Color(0.36f, 0.85f, 0.51f, 0.35f));
+            ApplySlicedSprite(band, SafeBandSpritePath, new Color(0.42f, 0.92f, 0.55f, 0.32f));
+            Place(band.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(size.x * 0.34f, size.y * 0.78f));
+
+            // Any three adjacent semitones would do; these match the note letters in the mock-up.
+            string[] letters = { "F#", "G#", "A#" };
+            for (int i = 0; i < letters.Length; i++)
+            {
+                TextMeshProUGUI letter = NewText("Note" + i, legend.transform, letters[i], 50f,
+                    TextAlignmentOptions.Center);
+                Place(letter.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                    new Vector2((i - 1) * size.x * 0.30f, size.y * 0.14f), new Vector2(150f, 70f));
+                letter.fontStyle = FontStyles.Bold;
+                letter.color = new Color(1f, 1f, 1f, i == 1 ? 1f : 0.7f);
+            }
+
+            for (int i = -6; i <= 6; i++)
+            {
+                bool onNote = i % 5 == 0;
+                Image tick = NewImage("Tick" + i, legend.transform, new Color(1f, 1f, 1f, onNote ? 0.85f : 0.4f));
+                Place(tick.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                    new Vector2(i * size.x * 0.062f, 18f), new Vector2(onNote ? 4f : 3f, onNote ? 26f : 16f));
+            }
+
+            Image needle = NewImage("Needle", legend.transform, Color.white);
+            ApplySlicedSprite(needle, NeedleSpritePath, Color.white);
+            Place(needle.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(24f, size.y * 0.66f));
         }
 
         // A tick every ten cents, taller on the semitone boundaries and tallest under each letter.
@@ -520,12 +1004,12 @@ namespace FlappyVoice.Editor
                 bool onNote = fromNote == 0;
                 bool onBoundary = fromNote == 50;
 
-                float height = onNote ? 54f : onBoundary ? 40f : 22f;
+                float height = onNote ? 34f : onBoundary ? 26f : 14f;
                 float alpha = onNote ? 0.95f : onBoundary ? 0.7f : 0.4f;
 
                 Image tick = NewImage("Tick" + i, dial, new Color(1f, 1f, 1f, alpha));
                 Place(tick.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                    new Vector2(cents / 100f * px, -10f), new Vector2(onNote ? 5f : 3f, height));
+                    new Vector2(cents / 100f * px, -8f), new Vector2(onNote ? 5f : 3f, height));
             }
         }
 
@@ -538,54 +1022,85 @@ namespace FlappyVoice.Editor
             GameObject panel = NewUI("Panel", root.transform);
             Stretch(panel);
 
-            Image dim = NewImage("Dim", panel.transform, new Color(0f, 0f, 0f, 0.72f));
+            Image dim = NewImage("Dim", panel.transform, new Color(0f, 0f, 0f, 0.55f));
             Stretch(dim.gameObject);
 
-            GameObject card = NewUI("ScoreCard", panel.transform);
-            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 170f),
-                new Vector2(860f, 880f));
+            // ShareService captures whatever is on the UI layer inside this rect, not just its
+            // children, so the buttons have to live BELOW the sign rather than on it. That is also
+            // why the end screen's sign is the shorter of the two.
+            GameObject card = NewUI("EndSign", panel.transform);
+            Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, SignSize);
 
-            Image cardBg = NewImage("CardBackground", card.transform, CardColor);
+            Image cardBg = NewImage("CardBackground", card.transform, new Color(0.93f, 0.88f, 0.74f, 1f));
             Stretch(cardBg.gameObject);
+            ApplySlicedSprite(cardBg, SignSpritePath, Color.white);
 
-            TextMeshProUGUI title = NewText("Title", card.transform, "FLAPPY VOICE", 56f, TextAlignmentOptions.Center);
-            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -60f),
-                new Vector2(800f, 80f));
+            TextMeshProUGUI title = NewText("Title", card.transform, "GAME OVER", 74f, TextAlignmentOptions.Center);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -350f),
+                new Vector2(700f, 125f));
+            ApplyTitleFace(title);
+            title.characterSpacing = 2f;
+            title.color = InkColor;
 
-            TextMeshProUGUI caption = NewText("ScoreCaption", card.transform, "SCORE", 40f,
+            TextMeshProUGUI caption = NewText("ScoreCaption", card.transform, "SCORE", 46f,
                 TextAlignmentOptions.Center);
-            Place(caption.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -220f),
-                new Vector2(800f, 60f));
-            caption.color = new Color(1f, 1f, 1f, 0.7f);
+            Place(caption.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -490f),
+                new Vector2(620f, 56f));
+            caption.characterSpacing = 6f;
+            caption.color = MutedInkColor;
 
-            TextMeshProUGUI finalScore = NewText("FinalScore", card.transform, "0", 220f, TextAlignmentOptions.Center);
-            Place(finalScore.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -290f),
-                new Vector2(800f, 280f));
+            TextMeshProUGUI finalScore = NewText("FinalScore", card.transform, "0", 145f, TextAlignmentOptions.Center);
+            Place(finalScore.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -534f),
+                new Vector2(620f, 165f));
+            finalScore.fontStyle = FontStyles.Bold;
+            finalScore.color = InkColor;
 
-            TextMeshProUGUI bestScore = NewText("BestScore", card.transform, "Best 0", 48f,
+            TextMeshProUGUI bestScore = NewText("BestScore", card.transform, "BEST 0", 50f,
                 TextAlignmentOptions.Center);
-            Place(bestScore.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 190f),
-                new Vector2(800f, 70f));
+            Place(bestScore.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -706f),
+                new Vector2(620f, 62f));
+            bestScore.characterSpacing = 4f;
+            bestScore.color = MutedInkColor;
 
+            // Sits ON the best-score line, and EndScreenUI hides that line while it shows. A row
+            // of its own would cost ~60 px of parchment face, and the face runs out before the
+            // Share button does - and on a new best "BEST 42" only repeats the 42 above it.
             Image badge = NewImage("NewBestBadge", card.transform, new Color(1f, 0.78f, 0.22f, 1f));
-            Place(badge.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 90f),
-                new Vector2(420f, 80f));
-            TextMeshProUGUI badgeLabel = NewText("Label", badge.transform, "NEW BEST!", 44f,
+            Place(badge.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -704f),
+                new Vector2(330f, 66f));
+            TextMeshProUGUI badgeLabel = NewText("Label", badge.transform, "NEW BEST!", 40f,
                 TextAlignmentOptions.Center);
             Stretch(badgeLabel.gameObject);
             badgeLabel.color = new Color(0.12f, 0.10f, 0.05f, 1f);
             badge.gameObject.SetActive(false);
 
-            Button playAgain = NewButton("PlayAgainButton", panel.transform, "Play Again",
-                new Color(0.30f, 0.78f, 0.52f, 1f), new Vector2(0f, -520f));
-            Button share = NewButton("ShareButton", panel.transform, "Share",
-                new Color(0.32f, 0.52f, 0.92f, 1f), new Vector2(0f, -700f));
+            Image deadBird = NewImage("Bird", card.transform, Color.white);
+            ApplySlicedSprite(deadBird, BirdDeadSpritePath, Color.white);
+            Place(deadBird.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -778f),
+                new Vector2(195f, 157f));
+
+            // Centre-relative, because NewButton anchors to the middle. Share is the one that runs
+            // out of parchment, so both are measured up from SignFaceBottom rather than down from
+            // the score: its lower edge lands 45 px inside the face.
+            const float buttonHeight = 135f;
+            float shareCenter = SignFaceBottom - 45f - (buttonHeight * 0.5f);
+            Button playAgain = NewButton("PlayAgainButton", card.transform, "Play Again",
+                FromSignTop(shareCenter - buttonHeight - 18f));
+            Button share = NewButton("ShareButton", card.transform, "Share",
+                FromSignTop(shareCenter));
+
+            // ShareService points a camera at this rect and renders every UI-layer graphic inside
+            // it, children or not. So the shared card is the sign's upper two thirds - everything
+            // down to the bird, and nothing of the two buttons below.
+            GameObject captureRect = NewUI("ScoreCard", card.transform);
+            Place(captureRect, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero,
+                new Vector2(SignSize.x, 920f));
 
             panel.SetActive(false);
 
             SerializedObject so = new SerializedObject(endScreen);
             SetRef(so, "panel", panel);
-            SetRef(so, "scoreCardRoot", (RectTransform)card.transform);
+            SetRef(so, "scoreCardRoot", (RectTransform)captureRect.transform);
             SetRef(so, "uiCamera", camera);
             SetRef(so, "finalScoreLabel", finalScore);
             SetRef(so, "bestScoreLabel", bestScore);
@@ -596,17 +1111,29 @@ namespace FlappyVoice.Editor
             return endScreen;
         }
 
-        private static Button NewButton(string name, Transform parent, string label, Color color, Vector2 position)
+        // Everything else on a sign is placed from its top edge; NewButton anchors to the middle,
+        // so this is the one conversion between the two.
+        private static Vector2 FromSignTop(float centerFromTop)
         {
-            Image background = NewImage(name, parent, color);
+            return new Vector2(0f, (SignSize.y * 0.5f) - centerFromTop);
+        }
+
+        // 9-sliced timber plaque. The sprite's border keeps the bevel and the rounded ends intact
+        // however wide the button is authored, so the two here can share one asset.
+        private static Button NewButton(string name, Transform parent, string label, Vector2 position)
+        {
+            Image background = NewImage(name, parent, new Color(0.55f, 0.38f, 0.22f, 1f));
+            ApplySlicedSprite(background, ButtonSpritePath, Color.white);
             Place(background.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position,
-                new Vector2(620f, 140f));
+                new Vector2(620f, 135f));
             background.raycastTarget = true;
             Button button = background.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
 
             TextMeshProUGUI text = NewText("Label", background.transform, label, 56f, TextAlignmentOptions.Center);
             Stretch(text.gameObject);
+            text.fontStyle = FontStyles.Bold;
+            text.color = ButtonLabelColor;
             return button;
         }
 
@@ -664,6 +1191,54 @@ namespace FlappyVoice.Editor
             rect.anchoredPosition = position;
         }
 
+        // FontStyles.Bold is as far as TMP goes without a real bold weight in the font asset, and
+        // the heavier face is a material property. A material INSTANCE cannot be used: TMP marks
+        // the ones it creates HideAndDontSave, so it would vanish on the scene save and the titles
+        // would silently go back to normal weight at runtime. Hence a real asset.
+        private static Material EnsureTitleMaterial()
+        {
+            TMP_FontAsset font = ResolveFont();
+            if (font == null || font.material == null)
+            {
+                return null;
+            }
+
+            Material source = font.material;
+            Material title = AssetDatabase.LoadAssetAtPath<Material>(TitleMaterialPath);
+            bool created = title == null;
+            if (created)
+            {
+                title = new Material(source);
+            }
+            else
+            {
+                title.shader = source.shader;
+                title.CopyPropertiesFromMaterial(source);
+            }
+
+            // Dilates the glyph face outward from the SDF edge - a genuinely heavier letterform
+            // rather than an outline drawn around a thin one.
+            title.SetFloat(ShaderUtilities.ID_FaceDilate, 0.22f);
+            title.name = "SignTitle";
+
+            if (created)
+            {
+                AssetDatabase.CreateAsset(title, TitleMaterialPath);
+            }
+            EditorUtility.SetDirty(title);
+            return title;
+        }
+
+        private static void ApplyTitleFace(TMP_Text text)
+        {
+            text.fontStyle = FontStyles.Bold;
+            Material face = EnsureTitleMaterial();
+            if (face != null)
+            {
+                text.fontSharedMaterial = face;
+            }
+        }
+
         private static TMP_FontAsset ResolveFont()
         {
             if (fontResolved)
@@ -717,8 +1292,9 @@ namespace FlappyVoice.Editor
             GameStateManager stateManager, ScoreManager scoreManager, ShareService shareService,
             MicrophoneInput microphoneInput, PitchTracker pitchTracker, GameAudio gameAudio,
             VoiceHeightSource voiceHeight,
-            AttractPilot attractPilot, PipeSpawner pipeSpawner,
-            PlayerController player, Camera viewCamera, HudUI hud, TunerBarUI tunerBar,
+            AttractPilot attractPilot, PipeSpawner pipeSpawner, ParallaxBackground background,
+            WebCam webCamBackground, SingingFx singingFx, LivesManager livesManager,
+            PlayerController player, Camera viewCamera, HudUI hud, LivesUI livesUI, TunerBarUI tunerBar,
             EndScreenUI endScreen)
         {
             SerializedObject so = new SerializedObject(bootstrap);
@@ -726,6 +1302,10 @@ namespace FlappyVoice.Editor
             SetRef(so, "stateManager", stateManager);
             SetRef(so, "scoreManager", scoreManager);
             SetRef(so, "pipeSpawner", pipeSpawner);
+            SetRef(so, "parallaxBackground", background);
+            SetRef(so, "webCamBackground", webCamBackground);
+            SetRef(so, "singingFx", singingFx);
+            SetRef(so, "livesManager", livesManager);
             SetRef(so, "attractPilot", attractPilot);
             SetRef(so, "voiceHeightSource", voiceHeight);
             SetRef(so, "player", player);
@@ -735,12 +1315,14 @@ namespace FlappyVoice.Editor
             SetRef(so, "gameAudio", gameAudio);
             SetRef(so, "shareService", shareService);
             SetRef(so, "hud", hud);
+            SetRef(so, "livesUI", livesUI);
             SetRef(so, "tunerBar", tunerBar);
             SetRef(so, "endScreen", endScreen);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        private static void WirePipeSections(Pipe pipe, GameObject top, GameObject bottom, GameObject gap)
+        private static void WirePipeSections(Pipe pipe, GameObject top, GameObject bottom, GameObject gap,
+            GameObject topBell, GameObject bottomBell)
         {
             SerializedObject so = new SerializedObject(pipe);
             SerializedProperty property = so.GetIterator();
@@ -752,7 +1334,10 @@ namespace FlappyVoice.Editor
                     continue;
                 }
                 string name = property.name.ToLowerInvariant();
+                bool isBell = name.Contains("bell");
                 GameObject source =
+                    isBell && (name.Contains("top") || name.Contains("upper")) ? topBell :
+                    isBell ? bottomBell :
                     name.Contains("top") || name.Contains("upper") ? top :
                     name.Contains("bottom") || name.Contains("lower") ? bottom :
                     name.Contains("gap") || name.Contains("trigger") || name.Contains("score") ? gap : null;

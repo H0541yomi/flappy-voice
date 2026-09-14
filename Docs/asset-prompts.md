@@ -62,10 +62,9 @@ Hard numbers the art has to respect (from `GameConfig`):
 | 1 | Trumpet bell — top | 512×384 | `Art/Trumpets/bell_top.png` | pivot at gap edge, flare points down |
 | 2 | Trumpet bell — bottom | 512×384 | `Art/Trumpets/bell_bottom.png` | mirror of #1, flare points up |
 | 3 | Trumpet tube | 384×384 | `Art/Trumpets/tube.png` | **tiles vertically**, seamless top↔bottom |
-| 4 | Valve cluster | 256×384 | `Art/Trumpets/valves.png` | optional overlay, breaks up long tubes |
 | 5 | Blow burst | 256×256 | `Art/Fx/blow_burst.png` | additive-friendly, white/cream rays |
 | 6 | Bird — idle | 512×512 | `Art/Bird/bird_idle.png` | body ≈ 330 px wide, centred |
-| 7 | Bird — singing | 512×512 | `Art/Bird/bird_sing.png` | same silhouette, beak open on mic |
+| 7 | Bird — singing | 512×512 | `Art/Bird/bird_sing.png` | same silhouette, beak open singing |
 | 8 | Bird — dead | 512×512 | `Art/Bird/bird_dead.png` | X eyes, slumped |
 | 9 | Music note ×3 | 128×128 | `Art/Fx/note_a.png` … `note_c.png` | one glyph each, no stacks |
 | 10 | Sky gradient | 512×2048 | `Art/Bg/sky.png` | stretches horizontally, no features |
@@ -123,19 +122,6 @@ variation. Flat magenta #FF00FF background.
 **Verify the vertical loop** (recipe below) — this is the asset most likely to come back with a
 seam.
 
-### 4. Valve cluster
-
-```
-SIZE: 256×384 px  (aspect 2:3)
-PATH: Art/Trumpets/valves.png
-PROMPT:
-<global preamble>
-Three small brass trumpet valve casings with rounded finger buttons, in a row, seen side-on,
-attached to nothing — just the valve cluster and its short crossbars, as it would sit on the side
-of a trumpet tube. Warm brass, chunky toy proportions, soft highlights. Isolated on flat magenta
-#FF00FF, no shadow.
-```
-
 ### 5. Blow burst
 
 ```
@@ -156,17 +142,16 @@ SIZE: 512×512 px  (square)
 PATH: Art/Bird/bird_idle.png
 PROMPT:
 <global preamble>
-A small round chubby yellow songbird in side profile facing right, holding a tiny dark grey
-handheld microphone up to its beak with one wing. Big friendly black dot eye, small orange beak,
-short tail, soft cel shading, a slightly deeper yellow on the underside. Wings tucked. Calm, cute,
-mascot-like. The bird occupies about 65% of the frame, centred, isolated on flat magenta #FF00FF,
-no shadow.
+A small round chubby yellow songbird in side profile facing right, beak closed. Big friendly black
+dot eye, small orange beak, short tail, soft cel shading, a slightly deeper yellow on the underside.
+Both wings tucked neatly against its sides. Calm, cute, mascot-like. The bird occupies about 65% of
+the frame, centred, isolated on flat magenta #FF00FF, no shadow.
 ```
 
-- `bird_sing.png`: same sentence, replacing *Wings tucked. Calm* with **"Beak open wide singing into
-  the microphone, wings spread mid-flap, eye happily squinted. Energetic"**.
+- `bird_sing.png`: same sentence, replacing *Both wings tucked neatly against its sides. Calm* with
+  **"Beak open wide singing upward, wings spread mid-flap, eye happily squinted. Energetic"**.
 - `bird_dead.png`: replace with **"Eyes closed as two small X marks, beak open, body slumped and
-  tilted backwards, wings limp, microphone slipping from its wing. Comically defeated, not gory"**.
+  tilted backwards, both wings limp at its sides. Comically defeated, not gory"**.
 
 The three must share one silhouette and one scale — generate them in one session, and if the model
 supports it, from the same seed.
@@ -290,13 +275,51 @@ paper grain. Isolated on flat magenta #FF00FF.
 
 ---
 
+### 21. Lives hearts
+
+Two frames, one generation each, same session and seed so the silhouettes match — the HUD shows them
+side by side and a mismatched outline reads as a bug. Red appears nowhere else in the palette; that
+is the point, the heart row has to be the one warm thing on a cool sky.
+
+```
+SIZE: 256×256 px  (aspect 1:1)
+PATH: Art/Ui/heart_full.png
+PROMPT:
+<global preamble>
+A single plump storybook heart, seen straight on, filling about 80% of a square frame and centred.
+Soft painterly cherry red — highlight #F07A6A, body #D9544C, deeper shadow #9C3630 along the lower
+right — with gentle cel shading and one small soft cream highlight up on the upper left lobe. Chunky
+rounded toy proportions, wide at the lobes, short blunt point at the bottom, symmetrical. No outline,
+no drop shadow, no gloss streaks, no sparkles, no face, no arrow, no ribbon, no text. Isolated on
+flat magenta #FF00FF.
+```
+
+```
+SIZE: 256×256 px  (aspect 1:1)
+PATH: Art/Ui/heart_empty.png
+PROMPT:
+<global preamble>
+The same plump storybook heart at the same size, position and silhouette, but spent: drained of all
+red and painted in flat muted slate blue-grey — face #5B7181, shadow #3E5162 along the lower right —
+like a heart-shaped hole left behind. Noticeably darker and lower contrast than the red version so
+the two read apart at a glance on a small phone HUD. Same shape exactly, no outline, no crack, no
+X, no dashed edge, no drop shadow, no text. Isolated on flat magenta #FF00FF.
+```
+
+Both are cutouts, not 9-slices — no border, pivot centred.
+
+---
+
 ## Processing (ffmpeg)
 
 An ffmpeg agent is the right tool for these steps — and only these. It cannot generate art, and it
 cannot cleanly matte a soft edge that was drawn against a busy background, which is why the prompts
 insist on flat magenta.
 
-**Key out the magenta and premultiply-safe despill:**
+**Key out the magenta and premultiply-safe despill.** `Tools/key-ui-art.py` is the checked-in
+version of this pass — it keys off the green channel alone (`a = 1 - (min(R,B) - G)/255`, exact for
+a white-ish foreground over magenta) rather than a colour distance, which is what keeps it from
+eating the cream and the leaf greens. The ffmpeg equivalent, for one-offs:
 
 ```sh
 ffmpeg -i raw.png -vf "colorkey=0xFF00FF:0.30:0.12,format=rgba" -y keyed.png
@@ -357,7 +380,73 @@ entirely. Say the word and I'll wire that mode instead.
 
 ## Handing the results back
 
-Drop the finished PNGs at their `PATH:` under `Flappy Voice/Assets/` and tell me. I'll set import
+Drop the finished PNGs at their `PATH:` under `Assets/` and tell me. I'll set import
 settings (PPU per folder, Full Rect for the 9-slices, borders, pivots, atlas membership), replace
 the procedural placeholders, wire the parallax scroller, the singing/idle bird swap, the note and
 blow-burst FX, and the two panels — and re-run the QC list above so nothing lands broken.
+
+---
+
+## Delivery status — batch 1 (2026-09-10)
+
+Raw generations landed in `Assets/Art/images/` as **JPEG**, keyed and placed by the
+processing pass. All 16 outputs pass the QC gate: zero residual magenta over both a dark and a light
+backdrop, no subject clipped by the frame, tiles verified by half-swap.
+
+| # | Asset | State | Note |
+|---|---|---|---|
+| 1 | `bell_top` | placed, **oversized** | flare is 6.43 units wide — see below |
+| 2 | `bell_bottom` | placed | vertical flip of #1; the mouth ellipse and the highlight both read correctly inverted, so no separate generation is needed |
+| 3 | `tube` | placed | **256×256, brass full-bleed** — `Pipe.Setup` stretches a section by `localScale`, so the section sprite has to be exactly 1×1 unit with no transparent margin |
+| 4 | `valves` | **dropped** | style mismatch, and the tube reads fine without it; asset deleted |
+| 5 | `blow_burst` | placed | |
+| 6–8 | birds | placed | frame **884×726**, not 512² — see below |
+| 9 | `note_a/b/c` | placed | |
+| 10 | `sky` | placed | source was landscape; rebuilt as a column median stretched to 512×2048 |
+| 11–12 | `far`, `mid` | placed | tile cleanly |
+| 13 | `near` | placed | **2048×819**, not 2048×512 — see below |
+| 14 | `clouds` | placed | tiles cleanly |
+| 17–20 | `needle`, `start_sign`, `button` | placed (batch 2) | keyed by `Tools/key-ui-art.py`; `gameover_scroll` was **dropped** — `start_sign` serves both panels |
+| 15 | `tuner_pill` | placed | scaled by height, uniform centre column extended to reach 4:1 |
+| 16 | `safe_band` | placed | source fade was too wide and bulged vertically; rebuilt from its
+brightest row with the fade confined to the 24 px 9-slice border |
+| 17–20 | needle, panels, button | **missing** | not generated yet |
+
+**The bird no longer holds a microphone.** `Brass Trumpet Bell Sprite (3).jpeg` is a fourth bird
+with a mic — rejected, and the three shipped bird poses are already mic-free, so nothing needed
+redoing.
+
+This makes refs `02`, `03` and `04` stale: all three still draw the mic, and this file tells you to
+attach `01`–`04` to *every* generation request. Anything bird-shaped generated from here needs an
+explicit override in the prompt — *"no microphone, no held props; the bird sings with its beak
+alone"* — or the references will keep putting it back.
+
+### The bell flare is out of proportion
+
+`bell_top` is a near-frontal bell whose flare is **4.56× its tube stub**. The references show a
+side-on bell flaring about 1.7×. The stub has to equal the pipe body — `Pipe._width` is `1.4f` and
+the collider is scaled to match, so a narrower stub would leave the visible pipe thinner than the
+thing that kills you. At that scale the flare comes out **6.43 world units wide on a 6.19-unit-wide
+screen**, and since pipes are spaced `PipeSpeed × SpawnIntervalSec` = 6.0 units apart, neighbouring
+bells overlap by ~0.4 units for the whole run.
+
+Nothing is *broken* by this — the gap stays clear and no collider changed — but the bell dominates
+the screen. Regenerating wants an explicit ratio in the prompt: *"seen from the side, the bell mouth
+no more than 1.8× the width of the tube, the opening a shallow ellipse rather than a circle facing
+the viewer"*.
+
+Two sizes deliberately depart from the table above:
+
+- **Birds are 884×726.** All three share one scale, fixed by the body's largest inscribed circle
+  (idle and singing measured identical; the dead pose was 8% larger and was corrected). At the
+  specified 330 px body the singing pose's wingspan needs 744 px of width, so a 512² frame would
+  clip it. The body is centred in the frame in all three, so the idle↔singing swap does not shift.
+- **`near` is 2048×819.** Forcing 2048×512 meant a 45% horizontal stretch and the foliage read as
+  wide ovals. Uniform scale was worth more than the round number.
+
+Import settings ship as `.meta` alongside each PNG: 256 PPU, centre pivot, alpha-is-transparency,
+`Repeat` on the scroll axis of the tiles (U for `far`/`mid`/`near`/`clouds`, V for `tube`/`sky`),
+9-slice borders 72 px on `tuner_pill` and 24 px on `safe_band`.
+
+The raw JPEGs under `Assets/` are imported by Unity as textures for no reason — move them out with
+`git mv Assets/Art/images Docs/art-raw` when convenient.

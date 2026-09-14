@@ -121,17 +121,21 @@ namespace FlappyVoice.UI
             {
                 finalScoreLabel.SetText(scoreManager.Score.ToString());
             }
+            bool isNewBest = scoreManager.IsNewBest;
+
             if (bestScoreLabel != null)
             {
-                bestScoreLabel.SetText($"Best {scoreManager.BestScore}");
-            }
-            if (newBestBadge != null)
-            {
-                bool isNewBest = scoreManager.IsNewBest;
-                if (newBestBadge.activeSelf != isNewBest)
+                bestScoreLabel.SetText($"BEST {scoreManager.BestScore}");
+                // The badge sits on this line rather than in a row of its own, and on a new best
+                // "BEST 42" only repeats the 42 already above it.
+                if (bestScoreLabel.gameObject.activeSelf == isNewBest)
                 {
-                    newBestBadge.SetActive(isNewBest);
+                    bestScoreLabel.gameObject.SetActive(!isNewBest);
                 }
+            }
+            if (newBestBadge != null && newBestBadge.activeSelf != isNewBest)
+            {
+                newBestBadge.SetActive(isNewBest);
             }
         }
 

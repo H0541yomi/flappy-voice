@@ -17,10 +17,13 @@ namespace FlappyVoice.Gameplay
         private readonly Queue<Pipe> _pool = new Queue<Pipe>();
         private readonly List<Pipe> _active = new List<Pipe>();
 
-        private const float FallbackPlayerRadius = 0.42f;
+        // Only reached before Configure has run or if the player has no collider; the real
+        // radius is the collider's, and GameConfig is the single source for what that is.
+        private const float FallbackPlayerRadius = 0.36f;
 
         private GameConfig _config;
         private GameStateManager _state;
+        private ScoreManager _score;
         private PlayerController _player;
         private float _spawnTimer;
         private float _currentInterval;
@@ -35,7 +38,7 @@ namespace FlappyVoice.Gameplay
             if (_viewCamera == null) _viewCamera = Camera.main;
         }
 
-        public void Configure(GameConfig config, GameStateManager state)
+        public void Configure(GameConfig config, GameStateManager state, ScoreManager score)
         {
             if (_state != null)
             {
@@ -44,6 +47,7 @@ namespace FlappyVoice.Gameplay
 
             _config = config;
             _state = state;
+            _score = score;
 
             if (_state != null)
             {
@@ -159,20 +163,21 @@ namespace FlappyVoice.Gameplay
             }
         }
 
+        // Pipes passed, not seconds elapsed: the run gets harder because the player is doing
+        // well, not because they are still alive. Speed and spacing stay put - the only thing
+        // that moves is how little room there is around the note.
         private void UpdateDifficulty()
         {
-            float elapsed = _state != null ? _state.RunElapsedSec : 0f;
-            float duration = Mathf.Max(0.01f, _config.DifficultyRampDurationSec);
-            float t = Mathf.Clamp01(elapsed / duration);
+            int passed = _score != null ? _score.Score : 0;
+            float difficulty = _config.DifficultyForPipesPassed(passed);
 
-            AnimationCurve curve = _config.DifficultyRampCurve;
-            float difficulty = curve != null ? Mathf.Clamp01(curve.Evaluate(t)) : t;
-
-            CurrentSpeed = Mathf.Lerp(_config.PipeSpeed, _config.MaxPipeSpeed, difficulty);
+            CurrentSpeed = _config.PipeSpeed;
             CurrentGapSize = _config.PipeGapSizeAtDifficulty(difficulty);
-            _currentInterval = Mathf.Max(0.05f,
-                Mathf.Lerp(_config.SpawnIntervalSec, _config.MinSpawnIntervalSec, difficulty));
+            _currentInterval = Mathf.Max(0.05f, _config.SpawnIntervalSec);
         }
+
+        public float CurrentDifficulty01 =>
+            _config != null ? _config.DifficultyForPipesPassed(_score != null ? _score.Score : 0) : 0f;
 
         private void Spawn()
         {
@@ -182,7 +187,11 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
-            int noteOffset = PickNoteOffset();
+            Place(pipe, PickNoteOffset());
+        }
+
+        private void Place(Pipe pipe, int noteOffset)
+        {
             float gapCenterY = GapCenterYForOffset(noteOffset);
 
             pipe.transform.position = new Vector3(SpawnX(), 0f, 0f);
@@ -230,40 +239,35 @@ namespace FlappyVoice.Gameplay
             return half + Mathf.Max(0f, _config.PipeEdgeMarginUnits);
         }
 
-        // noteOffset is the LOWER note of the pair the gap spans, so the centre lands on the
-        // boundary between that note and the next one up. Either of the two letters on the chip
-        // threads the pipe, and each gets the same margin either side.
+        // noteOffset is the note the gap is centred ON, so the note gets the same margin above
+        // it as below it and it is the only note of the range that threads the pipe.
         private float GapCenterYForOffset(int noteOffset)
         {
-            float height = PitchMath.HeightForNotePair(noteOffset, _config.OctaveWidthSemitones);
+            float height = PitchMath.HeightForOffset(noteOffset, _config.OctaveWidthSemitones);
             return Mathf.Lerp(_config.PlayfieldMinY, _config.PlayfieldMaxY, height);
         }
 
         private int PickNoteOffset()
         {
-            // One pair per adjacent note couple: offsets 0..width-1 pair note i with note i+1, and
-            // the topmost note is the upper half of the last pair rather than a pair of its own.
+            // Offsets are semitones above the anchored floor, so a range `count` semitones wide
+            // holds count + 1 notes: both ends are real, singable positions the bird can reach.
             int count = Mathf.Max(1, _config.OctaveWidthSemitones);
+            int top = count;
 
-            if (count < 2)
+            if (_lastNoteOffset < 0 || _lastNoteOffset > top)
             {
-                return 0;
-            }
-
-            if (_lastNoteOffset < 0 || _lastNoteOffset >= count)
-            {
-                return Random.Range(0, count);
+                return Random.Range(0, top + 1);
             }
 
             int step = MaxStepSemitones(count);
             int lo = Mathf.Max(0, _lastNoteOffset - step);
-            int hi = Mathf.Min(count - 1, _lastNoteOffset + step);
+            int hi = Mathf.Min(top, _lastNoteOffset + step);
             int candidates = hi - lo;
 
             if (candidates < 1)
             {
                 lo = 0;
-                candidates = count - 1;
+                candidates = top;
             }
 
             // draw over the window minus the previous offset, then shift past it: uniform, no
@@ -330,11 +334,21 @@ namespace FlappyVoice.Gameplay
             }
         }
 
+        private float PipeWidth()
+        {
+            return _pipePrefab != null ? _pipePrefab.Width : 1.4f;
+        }
+
+        private float ConfiguredRadius()
+        {
+            return _config != null ? _config.PlayerBodyRadiusUnits : FallbackPlayerRadius;
+        }
+
         private float PlayerRadius()
         {
             if (_player == null)
             {
-                return FallbackPlayerRadius;
+                return ConfiguredRadius();
             }
 
             Collider2D collider = _player.GetComponent<Collider2D>();

@@ -259,28 +259,15 @@ namespace FlappyVoice.Tests
             }
         }
 
-        // The gap sits on the boundary between the two notes it is named for, so it is exactly
-        // half a semitone above the lower one - that is what gives both notes the same margin.
+        // A gap is centred ON its note, so the gap centre and the singer's own position for that
+        // note are the same height - that is what gives the note equal room above and below.
         [Test]
-        public void HeightForNotePair_SitsBetweenItsTwoNotes()
+        public void HeightForOffset_SpansTheWholeRangeInclusive()
         {
-            for (int offset = 0; offset < 24; offset++)
-            {
-                float pair = PitchMath.HeightForNotePair(offset, 24);
-                float lower = PitchMath.HeightForOffset(offset, 24);
-                float upper = PitchMath.HeightForOffset(offset + 1, 24);
-
-                Assert.That(pair, Is.EqualTo((lower + upper) * 0.5f).Within(1e-6f));
-            }
-        }
-
-        // Never 0 or 1: an edge-pinned gap centre puts half the opening off screen.
-        [Test]
-        public void HeightForNotePair_StaysInsideThePlayfield()
-        {
-            Assert.That(PitchMath.HeightForNotePair(0, 24), Is.GreaterThan(0f));
-            Assert.That(PitchMath.HeightForNotePair(23, 24), Is.LessThan(1f));
-            Assert.That(PitchMath.HeightForNotePair(6, 0), Is.EqualTo(0f));
+            Assert.That(PitchMath.HeightForOffset(0, 24), Is.EqualTo(0f));
+            Assert.That(PitchMath.HeightForOffset(12, 24), Is.EqualTo(0.5f).Within(1e-6f));
+            Assert.That(PitchMath.HeightForOffset(24, 24), Is.EqualTo(1f));
+            Assert.That(PitchMath.HeightForOffset(6, 0), Is.EqualTo(0f));
         }
 
         [TestCase(69f, 0f)]

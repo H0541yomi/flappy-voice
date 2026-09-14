@@ -88,19 +88,6 @@ namespace FlappyVoice.Gameplay
             return (midi - RoundToSemitone(midi)) * 100f;
         }
 
-        // A pipe gap spans the two adjacent notes `lowerOffset` and `lowerOffset + 1`, so its
-        // centre sits on the boundary BETWEEN them, not on either note. That is what makes both
-        // notes pass through one gap with the same margin.
-        public static float HeightForNotePair(int lowerOffset, int octaveWidthSemitones)
-        {
-            if (octaveWidthSemitones <= 0) return 0f;
-
-            float height = (lowerOffset + 0.5f) / octaveWidthSemitones;
-            if (height <= 0f) return 0f;
-            if (height >= 1f) return 1f;
-            return height;
-        }
-
         // The band of pitches that clears a pipe gap, in MIDI. The bird's centre has to stay inside
         // the opening by its own radius, and the pitch-to-height mapping turns that band of screen
         // positions back into a band of notes: the edges are the pitches that just barely miss the
@@ -132,6 +119,9 @@ namespace FlappyVoice.Gameplay
             return true;
         }
 
+        // Where a note sits on screen, and therefore where a pipe gap placed on that note is
+        // centred: a gap is centred ON a note, not between two, so the note gets the same room
+        // above it as below it. Offsets run 0..octaveWidthSemitones inclusive.
         public static float HeightForOffset(int semitoneOffset, int octaveWidthSemitones)
         {
             if (octaveWidthSemitones <= 0) return 0f;

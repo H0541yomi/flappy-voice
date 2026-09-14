@@ -9,9 +9,13 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private Transform _topSection;
         [SerializeField] private Transform _bottomSection;
         [SerializeField] private BoxCollider2D _scoreZone;
+        // Children of the pipe root, not of the sections: a section is a 1x1 quad stretched by
+        // localScale, and anything parented to it inherits that stretch.
+        [SerializeField] private Transform _topBell;
+        [SerializeField] private Transform _bottomBell;
         [SerializeField] private float _width = 1.4f;
         [SerializeField] private float _scoreZoneWidth = 0.25f;
-        [SerializeField] private Color _pipeColor = new Color(0.30f, 0.72f, 0.36f, 1f);
+        [SerializeField] private Color _pipeColor = Color.white;
 
         private bool _built;
 
@@ -57,11 +61,23 @@ namespace FlappyVoice.Gameplay
             _bottomSection.localPosition = new Vector3(0f, bottomStart - bottomHeight * 0.5f, 0f);
             _bottomSection.localScale = new Vector3(_width, bottomHeight, 1f);
 
+            // The bells are authored with their pivot on the flare rim, so placing them exactly on
+            // the gap edge is what keeps the flare out of the gap.
+            if (_topBell != null)
+            {
+                _topBell.localPosition = new Vector3(0f, topStart, 0f);
+            }
+
+            if (_bottomBell != null)
+            {
+                _bottomBell.localPosition = new Vector3(0f, bottomStart, 0f);
+            }
+
             _scoreZone.transform.localPosition = new Vector3(0f, gapCenterY, 0f);
             _scoreZone.size = new Vector2(_scoreZoneWidth, GapSize);
         }
 
-        // Which note pair of the anchored range this gap was placed on. Nothing is drawn for it -
+        // Which note of the anchored range this gap was centred on. Nothing is drawn for it -
         // the spawner keeps it so a recycled pipe can be asked what it was, and so consecutive
         // gaps can be kept within singing reach of one another.
         public void SetNoteOffset(int semitoneOffset)

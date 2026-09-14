@@ -3,24 +3,23 @@ using UnityEngine;
 
 namespace FlappyVoice.Audio
 {
-    // Every audible event in the game, in one place: a music bed that follows the game state and
-    // two one-shots. The clips in Assets/Audio are synthesised placeholders (Tools/make-placeholder-
-    // audio.py) - dropping real files onto these four fields is the whole swap, no code involved.
+    // Every audible event in the game, in one place: two one-shots and a game-over bed. The clips
+    // in Assets/Audio are synthesised placeholders (Tools/make-placeholder-audio.py) - dropping
+    // real files onto these three fields is the whole swap, no code involved.
     //
-    // Kept deliberately mute-able as a unit: this game listens to the microphone while it plays, so
-    // music out of a phone speaker is going into the pitch detector. That is survivable at these
-    // volumes and with the amplitude gate, but it is the reason the music is quiet by default.
+    // There is deliberately NO music during attract or a run. The game listens to the microphone
+    // the whole time it is on screen, so anything coming out of the speaker feeds straight back
+    // into the pitch detector. Music only plays once the run is over and the mic no longer steers
+    // anything.
     public sealed class GameAudio : MonoBehaviour
     {
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private ScoreManager scoreManager;
+        [SerializeField] private LivesManager livesManager;
 
         [SerializeField] private AudioSource musicSource;
         [SerializeField] private AudioSource sfxSource;
 
-        // The start screen and the run share this one, by design: the handoff into a run should not
-        // be audible as a change of track.
-        [SerializeField] private AudioClip gameMusic;
         [SerializeField] private AudioClip gameOverMusic;
         [SerializeField] private AudioClip scoreSfx;
         [SerializeField] private AudioClip crashSfx;
@@ -29,14 +28,17 @@ namespace FlappyVoice.Audio
         [SerializeField, Range(0f, 1f)] private float sfxVolume = 0.85f;
 
         private int lastScore;
+        private int lastLives;
         private bool subscribed;
 
-        public void Configure(GameStateManager state, ScoreManager score)
+        public void Configure(GameStateManager state, ScoreManager score, LivesManager lives)
         {
             Unsubscribe();
             stateManager = state;
             scoreManager = score;
+            livesManager = lives;
             lastScore = scoreManager != null ? scoreManager.Score : 0;
+            lastLives = livesManager != null ? livesManager.Lives : 0;
 
             if (isActiveAndEnabled)
             {
@@ -49,6 +51,7 @@ namespace FlappyVoice.Audio
         {
             Subscribe();
             lastScore = scoreManager != null ? scoreManager.Score : 0;
+            lastLives = livesManager != null ? livesManager.Lives : 0;
             ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
         }
 
@@ -72,6 +75,7 @@ namespace FlappyVoice.Audio
             subscribed = true;
             if (stateManager != null) stateManager.OnStateChanged += ApplyState;
             if (scoreManager != null) scoreManager.OnScoreChanged += HandleScoreChanged;
+            if (livesManager != null) livesManager.OnLivesChanged += HandleLivesChanged;
         }
 
         private void Unsubscribe()
@@ -84,24 +88,40 @@ namespace FlappyVoice.Audio
             subscribed = false;
             if (stateManager != null) stateManager.OnStateChanged -= ApplyState;
             if (scoreManager != null) scoreManager.OnScoreChanged -= HandleScoreChanged;
+            if (livesManager != null) livesManager.OnLivesChanged -= HandleLivesChanged;
         }
 
         private void ApplyState(GameState state)
         {
             if (state == GameState.GameOver)
             {
-                PlayOneShot(crashSfx);
+                // No crash one-shot here: the hit that ended the run already spent a life, and
+                // HandleLivesChanged sounded it. Firing again would double it on the last hit only.
                 PlayMusic(gameOverMusic);
                 return;
             }
 
-            // Attract and Playing are the same track, so this is a no-op across the handoff.
-            PlayMusic(gameMusic);
+            // Attract and Playing are silent, so the mic hears the singer and nothing else.
+            StopMusic();
 
             if (state == GameState.Attract)
             {
                 lastScore = 0;
             }
+        }
+
+        // Every pipe the bird actually hits, not just the fatal one: a survivable hit spends a
+        // life, so a DECREASE here is exactly the set of collisions that counted. Invincible
+        // contacts never reach LivesManager, so they correctly make no sound.
+        private void HandleLivesChanged(int value)
+        {
+            // ResetLives raises this too, restoring the count - only losing one is a hit.
+            if (value < lastLives)
+            {
+                PlayOneShot(crashSfx);
+            }
+
+            lastLives = value;
         }
 
         // Fires as the bird passes the score trigger, which sits at the centre of the gap - so the
@@ -135,6 +155,17 @@ namespace FlappyVoice.Audio
             musicSource.loop = true;
             musicSource.volume = musicVolume;
             musicSource.Play();
+        }
+
+        private void StopMusic()
+        {
+            if (musicSource == null || !musicSource.isPlaying)
+            {
+                return;
+            }
+
+            musicSource.Stop();
+            musicSource.clip = null;
         }
 
         private void PlayOneShot(AudioClip clip)
