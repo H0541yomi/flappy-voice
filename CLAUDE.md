@@ -76,6 +76,27 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   (`PipeSpacingUnits 10.4`) — `PipeSpawner` spawns on distance travelled, not a timer, so a
   speed that moves mid-run cannot let the pipes drift closer together. `DifficultyRampTests`
   pins both ends of the ramp and that `interval * speed == spacing` at each.
+- **The gap's note letter is the spawner's to write, and the contact's to take down.** The
+  letter in a gap is a `TextMeshPro` on the pipe prefab, parented to the score zone that
+  `Pipe.Setup` already moves to the gap centre, so it needs no per-frame code. Which letter an
+  offset names depends on the anchored floor, so `PipeSpawner` fills it in at spawn and relabels
+  everything on screen from `VoiceHeightSource.OnAnchorChanged` — and leaves it **empty until the
+  range is anchored**, because before the player's first note the pipe is on an offset, not on a
+  note. It comes down through `Pipe.HasScored`, which both of `PlayerController`'s contact paths
+  set: threading the gap and hitting the pipe are the two ways a note gets answered, so that one
+  flag is the whole disappear rule rather than a check in each caller.
+  `PipeGapGeometryTests.GapLetterNamesTheNoteThatThreadsIt` pins that the letter names the note
+  that actually clears the gap, reached through the height mapping rather than through the same
+  addition that writes it.
+  **Its gold glow is an underlay, not a glow pass, and lives in `Art/Ui/NoteLetter.mat`.** The
+  font asset's material runs `TMP_SDF-Mobile`, whose only passes are outline and underlay — there
+  is no `GLOW_ON` to enable, and pulling the full `TMP_SDF` shader in would add a shader to the
+  Web build to draw a halo a centred underlay already draws. Offsets stay at zero (an offset is a
+  drop shadow, and a gap can sit anywhere on screen), and `ShaderUtilities.UpdateShaderRatios`
+  has to be called after setting the properties or `_ScaleRatioC` keeps the face's value and the
+  halo comes out the wrong size for the atlas. `NoteLetterGlowDilate`/`…Softness` are bounded by
+  `FontBuilder.AtlasPadding` (9 px at a 90 pt sampling size) — past it the halo is cut off square
+  at the glyph's cell. A material **asset**, for the same reason `SignTitle.mat` is one.
 - **Height is continuous in pitch.** Nothing may round pitch to a semitone on the way to a position.
   Two `PitchMathTests` cases exist purely to catch a reintroduction.
 - **`TunerBarUI.PixelsPerSemitone` also sets the tick ruler** — `SceneBuilder` reads the constant
@@ -199,9 +220,10 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   face has none, so a missing asset leaves the scores in IM Fell rather than blank.
 - **One ink for the whole app.** `InkColor` is #501713, the brown the signs are drawn in, and
   `MutedInkColor` is a lifted version of it for quiet lines; `ButtonLabelColor` is #FBD97B,
-  because ink on dark timber would be unreadable. The **only** text that is not ink is the in-run
-  `ScoreLabel`, which floats over the playfield rather than sitting on parchment and keeps
-  `NewText`'s white. The brass `YES!` plaque is light, so its label is ink, not gold.
+  because ink on dark timber would be unreadable — and it is also the gold the pipe note letters
+  glow in, which is the only other warm light in the palette. The **only** text that is not ink
+  is the in-run `ScoreLabel`, which floats over the playfield rather than sitting on parchment and
+  keeps `NewText`'s white. The brass `YES!` plaque is light, so its label is ink, not gold.
 - **Consent layout came from Figma, its proportions did not.** The design stretches the parchment
   to a 1.401 aspect where the sprite's own is 1.187; since it is not 9-sliced, the consent heights
   come across as *fractions* of the design frame (`ConsentTitleCenterFromTop` and friends) rather
@@ -281,7 +303,7 @@ System assets live in `Library/PackageCache`, not in `Assets`.
 - **Deliberately absent:** music of any kind, including the game-over bed, and everything that
   read it (`MusicDirector`, `SongAnalyzer`, `BeatNotePlanner`, beat-synced spawning, `GameAudio`'s
   music source). `GameAudio` is two one-shots and nothing else. Also gone: dev height source and
-  dev panel, the flap bob, the world-space note line, the mic level meter, in-gap note labels,
+  dev panel, the flap bob, the world-space note line, the mic level meter,
   `PitchMeterUI`. All removed on request — do not reintroduce them as "helpful".
 - **`GameConfig.UseCameraBackground` is the camera kill switch.** Off means `GameBootstrap` never
   runs `StartCameraRoutine` (no prompt at all) and `WebCam` tears the feed down live, so the

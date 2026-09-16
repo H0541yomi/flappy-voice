@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 namespace FlappyVoice.Gameplay
@@ -20,6 +21,10 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private Transform _topTube;
         [SerializeField] private Transform _bottomTube;
         [SerializeField] private BoxCollider2D _scoreZone;
+        // The letter of the note this gap is centred on, drawn in the opening. A child of the
+        // score zone, which Setup already moves to the gap centre, so the letter follows the gap
+        // with no per-frame code of its own.
+        [SerializeField] private TMP_Text _noteLabel;
         // Children of the pipe root, not of the sections: a section is a 1x1 quad stretched by
         // localScale, and anything parented to it inherits that stretch.
         [SerializeField] private Transform _topBell;
@@ -29,12 +34,28 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private Color _pipeColor = Color.white;
 
         private bool _built;
+        private bool _hasScored;
         private float _topBellDepth;
         private float _bottomBellDepth;
 
         public float GapCenterY { get; private set; }
         public float GapSize { get; private set; }
-        public bool HasScored { get; set; }
+
+        // Set by both of PlayerController's contact paths - threading the gap and crashing into
+        // the pipe - which makes it exactly the moment the note has been answered one way or the
+        // other, and so the moment its letter stops being an instruction and starts being clutter.
+        public bool HasScored
+        {
+            get => _hasScored;
+            set
+            {
+                _hasScored = value;
+                if (_noteLabel != null)
+                {
+                    _noteLabel.enabled = !value;
+                }
+            }
+        }
         public int NoteOffset { get; private set; }
         public float X => transform.position.x;
 
@@ -103,6 +124,18 @@ namespace FlappyVoice.Gameplay
         public void SetNoteOffset(int semitoneOffset)
         {
             NoteOffset = semitoneOffset;
+        }
+
+        /// The letter to sing to thread this gap. Handed in rather than worked out here, because
+        /// which letter an offset names depends on the anchored floor - which is not known until
+        /// the player's first note, and moves every letter on screen when it lands. Empty until
+        /// then: naming a note the pipe is not actually on would teach the dial wrong.
+        public void SetNoteLabel(string noteName)
+        {
+            if (_noteLabel != null)
+            {
+                _noteLabel.text = noteName;
+            }
         }
 
         /// Pulls a tube's drawn end back inside its bell, so the flare is what the gap is lined

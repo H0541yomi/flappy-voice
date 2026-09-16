@@ -8,6 +8,9 @@ namespace FlappyVoice.Gameplay
     {
         [SerializeField] private Pipe _pipePrefab;
         [SerializeField] private Camera _viewCamera;
+        // Only the floor is wanted, to name the note each gap sits on. Serialized and auto-wired
+        // like the camera, so the letters survive a scene save on their own.
+        [SerializeField] private VoiceHeightSource _voiceSource;
         [SerializeField] private int _poolSize = 8;
         [SerializeField] private int _maxNoteStepSemitones = 7;
         [SerializeField] private float _reachSafetyFactor = 0.55f;
@@ -36,6 +39,16 @@ namespace FlappyVoice.Gameplay
         private void Awake()
         {
             if (_viewCamera == null) _viewCamera = Camera.main;
+        }
+
+        private void OnEnable()
+        {
+            if (_voiceSource != null) _voiceSource.OnAnchorChanged += RelabelActivePipes;
+        }
+
+        private void OnDisable()
+        {
+            if (_voiceSource != null) _voiceSource.OnAnchorChanged -= RelabelActivePipes;
         }
 
         public void Configure(GameConfig config, GameStateManager state, ScoreManager score)
@@ -208,9 +221,33 @@ namespace FlappyVoice.Gameplay
             pipe.gameObject.SetActive(true);
             pipe.Setup(gapCenterY, CurrentGapSize, _config.PlayfieldMinY, _config.PlayfieldMaxY);
             pipe.SetNoteOffset(noteOffset);
+            pipe.SetNoteLabel(NoteNameForOffset(noteOffset));
 
             _active.Add(pipe);
             _lastNoteOffset = noteOffset;
+        }
+
+        // The letter a gap is asking the player for. Offsets are semitones above the anchored
+        // floor, so before the first note has anchored the range there is no letter to give: the
+        // pipe is not on a note yet, it is on an offset from a floor nobody has set.
+        private string NoteNameForOffset(int noteOffset)
+        {
+            if (_voiceSource == null || !_voiceSource.IsAnchored)
+            {
+                return string.Empty;
+            }
+
+            return PitchMath.NoteNameForOffset(_voiceSource.FloorMidi, noteOffset);
+        }
+
+        // The floor has moved - a run just anchored, or went back to attract - so every letter
+        // already on screen names the wrong note. Never more than the pool's worth of pipes.
+        private void RelabelActivePipes()
+        {
+            for (int i = 0; i < _active.Count; i++)
+            {
+                _active[i].SetNoteLabel(NoteNameForOffset(_active[i].NoteOffset));
+            }
         }
 
         // Spawn and despawn are pinned to the camera frustum, not to fixed X values: at a phone's

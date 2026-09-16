@@ -59,6 +59,7 @@ namespace FlappyVoice.Editor
         private const string HeartEmptySpritePath = "Assets/Art/Ui/heart_empty.png";
         private const string TitleMaterialPath = "Assets/Art/Ui/SignTitle.mat";
         private const string WebCamMaterialPath = "Assets/Art/Ui/WebCamFeed.mat";
+        private const string NoteLetterMaterialPath = "Assets/Art/Ui/NoteLetter.mat";
         private const int WebCamSortingOrder = -65;
 
         // Scenery, back to front: sprite, world Y of the layer's centre, vertical scale, scroll
@@ -147,6 +148,17 @@ namespace FlappyVoice.Editor
         // Gap between the bottom of the tuner strip and the top of the in-run score. The score is
         // the strip's readout in another form - the note you are holding and what it has won you -
         // so they read as one block at the top of the screen rather than two separate HUDs.
+        // World units. A letter comes out 0.47 tall at this size, so it clears the narrowest gap
+        // the ramp ever opens (1.075) with room either side, and the rect is wide enough for the
+        // two-glyph worst case ("C#", 0.94) without wrapping.
+        private static readonly Vector2 NoteLetterSize = new Vector2(1.2f, 0.8f);
+        private const float NoteLetterFontSize = 6.5f;
+        // How far the glow spreads past the glyph and how soft its edge is, both in SDF units.
+        // The bound on the first is the font atlas's 9 px padding: spread past that and the halo
+        // is cut off square at the glyph's cell.
+        private const float NoteLetterGlowDilate = 0.4f;
+        private const float NoteLetterGlowSoftness = 0.6f;
+
         private const float ScoreLabelGapPx = 40f;
         private const float ScoreLabelTopFromTop =
             TunerTopMarginPx + TunerBarHeightPx + ScoreLabelGapPx;
@@ -483,9 +495,15 @@ namespace FlappyVoice.Editor
             gapCollider.size = new Vector2(0.25f, gap);
 
             Pipe pipe = root.AddComponent<Pipe>();
+            TextMeshPro noteLabel = BuildPipeNoteLabel(gapTrigger.transform);
+
             WirePipeSections(pipe, top, bottom, gapTrigger, topBell, bottomBell,
                 top.transform.Find(TubeChildName).gameObject,
                 bottom.transform.Find(TubeChildName).gameObject);
+
+            SerializedObject noteSo = new SerializedObject(pipe);
+            SetRef(noteSo, "_noteLabel", noteLabel);
+            noteSo.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
             UnityEngine.Object.DestroyImmediate(root);
@@ -497,6 +515,57 @@ namespace FlappyVoice.Editor
                 Debug.LogWarning($"[SceneBuilder] failed to load pipe prefab at {PipePrefabPath}");
             }
             return prefab;
+        }
+
+        // The note the gap is asking for, drawn in the opening. Parented to the gap trigger because
+        // Pipe.Setup already moves that to the gap centre on every spawn, so the letter rides along
+        // with no runtime code of its own; the name avoids every word WirePipeSections matches on,
+        // and it carries no collider, keeping it out of scoring and death contacts.
+        //
+        // Ink, not the white the in-run score floats in: a gap can sit anywhere in the playfield,
+        // so the letter has to hold up over pale sky, snow and the bushes alike, and white only
+        // survives the first of those.
+        private static TextMeshPro BuildPipeNoteLabel(Transform gapTrigger)
+        {
+            GameObject go = new GameObject("NoteLetter", typeof(RectTransform));
+            go.transform.SetParent(gapTrigger, false);
+            // In front of the pipes, behind the bird.
+            go.transform.localPosition = new Vector3(0f, 0f, -0.2f);
+            go.transform.localScale = Vector3.one;
+
+            RectTransform rect = (RectTransform)go.transform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = NoteLetterSize;
+
+            TextMeshPro label = go.AddComponent<TextMeshPro>();
+            TMP_FontAsset font = ResolveFont();
+            if (font != null)
+            {
+                label.font = font;
+            }
+
+            // Empty rather than a placeholder letter: until a run anchors the range, no pipe is on
+            // a note that can be named, and PipeSpawner is what fills these in.
+            label.text = string.Empty;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = InkColor;
+            label.raycastTarget = false;
+            // Fixed rather than auto-sized: every string this can hold is one or two glyphs, and
+            // auto-fitting settled on the same size for all of them anyway - at the cost of a
+            // re-fit on the player's first frame.
+            label.fontSize = NoteLetterFontSize;
+            label.sortingOrder = 7;
+
+            Material glow = EnsureNoteLetterMaterial();
+            if (glow != null)
+            {
+                label.fontSharedMaterial = glow;
+            }
+
+            return label;
         }
 
         // A bell sprite is authored at true world size (256 px per unit) with its pivot on the
@@ -1595,6 +1664,58 @@ namespace FlappyVoice.Editor
             }
             EditorUtility.SetDirty(title);
             return title;
+        }
+
+        // A gold halo behind the letter, so it holds its edge over pale sky, snow and bushes
+        // alike - the same #FBD97B the button labels are set in, which is the only warm light in
+        // the palette.
+        //
+        // It is TMP's UNDERLAY with the offset zeroed, not its GLOW: the font asset's material
+        // runs TMP_SDF-Mobile, whose only passes are outline and underlay, and pulling the full
+        // TMP_SDF shader in for a real glow pass would add a shader to the Web build to draw a
+        // halo a centred underlay already draws. A material ASSET for the same reason the title
+        // face is one - TMP marks instances HideAndDontSave and they revert on the scene save.
+        private static Material EnsureNoteLetterMaterial()
+        {
+            TMP_FontAsset font = ResolveFont();
+            if (font == null || font.material == null)
+            {
+                return null;
+            }
+
+            Material source = font.material;
+            Material glow = AssetDatabase.LoadAssetAtPath<Material>(NoteLetterMaterialPath);
+            bool created = glow == null;
+            if (created)
+            {
+                glow = new Material(source);
+            }
+            else
+            {
+                glow.shader = source.shader;
+                glow.CopyPropertiesFromMaterial(source);
+            }
+
+            glow.EnableKeyword(ShaderUtilities.Keyword_Underlay);
+            glow.SetColor(ShaderUtilities.ID_UnderlayColor, ButtonLabelColor);
+            // Centred: an offset would make it a drop shadow, and a letter lit from one side
+            // reads as a mistake against a gap that can sit anywhere on the screen.
+            glow.SetFloat(ShaderUtilities.ID_UnderlayOffsetX, 0f);
+            glow.SetFloat(ShaderUtilities.ID_UnderlayOffsetY, 0f);
+            glow.SetFloat(ShaderUtilities.ID_UnderlayDilate, NoteLetterGlowDilate);
+            glow.SetFloat(ShaderUtilities.ID_UnderlaySoftness, NoteLetterGlowSoftness);
+            // The shader reads the underlay through _ScaleRatioC, which is only recomputed when
+            // something asks; set straight onto the asset it would stay at the face's own value
+            // and the halo would come out the wrong size for the atlas.
+            ShaderUtilities.UpdateShaderRatios(glow);
+            glow.name = "NoteLetter";
+
+            if (created)
+            {
+                AssetDatabase.CreateAsset(glow, NoteLetterMaterialPath);
+            }
+            EditorUtility.SetDirty(glow);
+            return glow;
         }
 
         private static void ApplyTitleFace(TMP_Text text)

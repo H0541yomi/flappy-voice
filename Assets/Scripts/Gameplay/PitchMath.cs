@@ -81,6 +81,15 @@ namespace FlappyVoice.Gameplay
             return ChromaticNames[index];
         }
 
+        // The letter a pipe gap is asking for: a gap sits `semitoneOffset` semitones above the
+        // anchored floor, and the floor is itself a whole semitone, so the two add to a real note.
+        // Named here rather than in the spawner so the run-start invariant - the note that anchors
+        // the range is the note printed on the gap it was anchored at - can be pinned by a test.
+        public static string NoteNameForOffset(float floorMidi, int semitoneOffset)
+        {
+            return NoteNameForMidi(RoundToSemitone(floorMidi) + semitoneOffset);
+        }
+
         // Signed distance in cents from the nearest semitone, in -50..+50. Drives the tuner bar,
         // which reads the deviation rather than the note.
         public static float CentsFromNearestSemitone(float midi)

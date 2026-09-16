@@ -346,12 +346,13 @@ namespace FlappyVoice.Gameplay
                 return;
             }
 
+            // A pipe you crashed into does not also pay out. Claiming the score zone here is what
+            // stops it, since the bird still flies through the gap on its way past - and it is
+            // what takes the gap's note letter down, whether the hit was survivable or not.
+            pipe.HasScored = true;
+
             if (_lives != null && _lives.TryConsumeLife())
             {
-                // A pipe you crashed into does not also pay out. Claiming the score zone here is
-                // what stops it, since the bird still flies through the gap on its way past.
-                pipe.HasScored = true;
-
                 IsInvincible = true;
                 _invinciblePastPipe = pipe;
                 _invincibleEarliestEnd = Time.time

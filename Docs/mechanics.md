@@ -128,6 +128,20 @@ pick = lo + Random.Range(0, hi − lo) ; if (pick >= last) pick++
 (`_maxNoteStepSemitones 7`, `_reachSafetyFactor 0.55`), so consecutive gaps stay within singing
 reach of one another.
 
+### The letter in the gap
+
+Each gap carries the letter of the note it is centred on, drawn at its centre in ink with a gold
+(#FBD97B) glow behind it, at 0.47 world units - under half the narrowest opening the ramp ever makes (1.075), so it never touches
+the pipe it is naming. `PitchMath.NoteNameForOffset(floorMidi, offset)` names it, which means it
+cannot be named at all until the first sung note has anchored the range: an offset is only a note
+once there is a floor under it. So the letters are blank through attract mode, appear on
+everything on screen the moment the anchor lands (`VoiceHeightSource.OnAnchorChanged`), and are
+correct for the rest of the run because the floor is never re-derived mid-run.
+
+A letter disappears when the bird reaches its pipe - through the gap or into the tube, both of
+which set `Pipe.HasScored`. The score zone is 0.25 units wide at the gap centre, so with the
+bird's own radius the letter goes about half a unit before the bird is on top of it.
+
 ## The tuner strip
 
 `TunerBarUI`, canvas space, a **600×180 pill at the top centre** — not a full-width bar. At full

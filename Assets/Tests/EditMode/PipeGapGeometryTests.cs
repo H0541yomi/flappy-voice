@@ -143,6 +143,40 @@ namespace FlappyVoice.Tests
             }
         }
 
+        // The letter drawn in a gap is an instruction, so it has to name the note that actually
+        // threads that gap. The two are reached by different routes - the label counts semitones
+        // up from the floor, the geometry maps a height back to a pitch - and this pins that they
+        // land on the same note, and that holding it really does clear the pipe.
+        [TestCase(60f)]
+        [TestCase(48.4f)]
+        [TestCase(67.6f)]
+        public void GapLetterNamesTheNoteThatThreadsIt(float sungMidi)
+        {
+            int width = config.OctaveWidthSemitones;
+            float gap = config.PipeGapSizeAtDifficulty(0f);
+
+            for (int gapOffset = 0; gapOffset <= width; gapOffset++)
+            {
+                float gapHeight = PitchMath.HeightForOffset(gapOffset, width);
+                float floor = PitchMath.FloorMidiForNoteAtHeight(sungMidi, gapHeight, width);
+
+                // The pitch whose height IS this gap's centre, read back out of the mapping the
+                // bird flies by rather than added up the way the label is.
+                float threadingMidi = floor + (gapHeight * width);
+
+                Assert.That(PitchMath.NoteNameForOffset(floor, gapOffset),
+                    Is.EqualTo(PitchMath.NoteNameForMidi(PitchMath.RoundToSemitone(threadingMidi))),
+                    $"gap at note {gapOffset} of {width}, floor {floor}");
+
+                float gapCenterY = Mathf.Lerp(config.PlayfieldMinY, config.PlayfieldMaxY, gapHeight);
+                float birdY = Mathf.Lerp(config.PlayfieldMinY, config.PlayfieldMaxY,
+                    PitchMath.ClampToOctaveHeight(threadingMidi, floor, width));
+
+                Assert.That(Fits(gap, gapCenterY, birdY), Is.True,
+                    $"note named on gap {gapOffset} does not clear it");
+            }
+        }
+
         private static float SizeAtOctaveWidth(GameConfig target, int width)
         {
             SetPrivateInt(target, "_octaveWidthSemitones", width);
