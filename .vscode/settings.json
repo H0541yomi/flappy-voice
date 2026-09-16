@@ -67,5 +67,5 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "flappy-voice-app.slnx"
+    "dotnet.defaultSolution": "flappy-voice.slnx"
 }

@@ -177,6 +177,9 @@ function snapshotBuildInputs() {
     relativePath.startsWith("ProjectSettings/") ||
     relativePath.startsWith("Packages/") ||
     relativePath.startsWith("Assets/WebGLTemplates/") ||
+    // The editor rewrites dotnet.defaultSolution to match whatever .slnx it generates, and the
+    // generated solution is gitignored, so this file lands dirty after every build.
+    relativePath.startsWith(".vscode/") ||
     relativePath.endsWith(".meta");
 
   const originals = new Map();
