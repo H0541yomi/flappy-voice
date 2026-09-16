@@ -6,8 +6,19 @@ namespace FlappyVoice.Gameplay
     {
         private const float BoundsOvershoot = 3f;
 
+        // A few pixels of the bell's neck, at the 256 px per unit the bells are authored at. The
+        // neck is drawn to the tube's exact width, so its outermost column is antialiased and a
+        // flush joint would open a hairline of sky at each corner of the seam.
+        private const float TubeBellOverlapUnits = 8f / 256f;
+
         [SerializeField] private Transform _topSection;
         [SerializeField] private Transform _bottomSection;
+        // The tube sprite hangs off its section rather than on it. The section is stretched to the
+        // pipe's full extent because that is what its collider has to cover, but the tube must stop
+        // where the bell's neck begins or it reappears below the flare as a stub in the gap. Sizes
+        // here are therefore fractions of the section's stretch, not world units.
+        [SerializeField] private Transform _topTube;
+        [SerializeField] private Transform _bottomTube;
         [SerializeField] private BoxCollider2D _scoreZone;
         // Children of the pipe root, not of the sections: a section is a 1x1 quad stretched by
         // localScale, and anything parented to it inherits that stretch.
@@ -18,6 +29,8 @@ namespace FlappyVoice.Gameplay
         [SerializeField] private Color _pipeColor = Color.white;
 
         private bool _built;
+        private float _topBellDepth;
+        private float _bottomBellDepth;
 
         public float GapCenterY { get; private set; }
         public float GapSize { get; private set; }
@@ -61,6 +74,13 @@ namespace FlappyVoice.Gameplay
             _bottomSection.localPosition = new Vector3(0f, bottomStart - bottomHeight * 0.5f, 0f);
             _bottomSection.localScale = new Vector3(_width, bottomHeight, 1f);
 
+            // The bell is a length of tube that flares out, drawn at the tube's own width where the
+            // two meet, so the tube has to end where the bell's neck begins. Drawn all the way to
+            // the gap edge instead, its flat end shows below the flare as a stub - the section
+            // still reaches the edge, because the collider is what lines the gap.
+            InsetTube(_topTube, topHeight, _topBellDepth, 1f);
+            InsetTube(_bottomTube, bottomHeight, _bottomBellDepth, -1f);
+
             // The bells are authored with their pivot on the flare rim, so placing them exactly on
             // the gap edge is what keeps the flare out of the gap.
             if (_topBell != null)
@@ -85,6 +105,38 @@ namespace FlappyVoice.Gameplay
             NoteOffset = semitoneOffset;
         }
 
+        /// Pulls a tube's drawn end back inside its bell, so the flare is what the gap is lined
+        /// with. Everything is expressed in the section's own units because the section is
+        /// non-uniformly scaled: <paramref name="sign"/> is +1 when the gap edge is the section's
+        /// lower end, -1 when it is the upper one.
+        private static void InsetTube(Transform tube, float sectionHeight, float bellDepth, float sign)
+        {
+            if (tube == null)
+            {
+                return;
+            }
+
+            float inset = Mathf.Clamp(bellDepth - TubeBellOverlapUnits, 0f, sectionHeight * 0.9f);
+            float fraction = inset / Mathf.Max(0.05f, sectionHeight);
+            tube.localScale = new Vector3(1f, 1f - fraction, 1f);
+            tube.localPosition = new Vector3(0f, sign * fraction * 0.5f, 0f);
+        }
+
+        /// How far a bell reaches back up the pipe from the gap edge it sits on. Read off the sprite
+        /// rather than written down here, so redrawing the bell moves the tube's end with it, and
+        /// measured either side of the pivot so it does not care which end the pivot is on.
+        private static float BellDepth(Transform bell)
+        {
+            SpriteRenderer renderer = bell != null ? bell.GetComponent<SpriteRenderer>() : null;
+            if (renderer == null || renderer.sprite == null)
+            {
+                return 0f;
+            }
+
+            Bounds bounds = renderer.sprite.bounds;
+            return Mathf.Max(bounds.max.y, -bounds.min.y);
+        }
+
         public void Move(float speed, float deltaTime)
         {
             Vector3 p = transform.position;
@@ -103,13 +155,16 @@ namespace FlappyVoice.Gameplay
 
             if (_topSection == null)
             {
-                _topSection = CreateSection("Top");
+                _topSection = CreateSection("Top", out _topTube);
             }
 
             if (_bottomSection == null)
             {
-                _bottomSection = CreateSection("Bottom");
+                _bottomSection = CreateSection("Bottom", out _bottomTube);
             }
+
+            _topBellDepth = BellDepth(_topBell);
+            _bottomBellDepth = BellDepth(_bottomBell);
 
             if (_scoreZone == null)
             {
@@ -120,19 +175,25 @@ namespace FlappyVoice.Gameplay
             }
         }
 
-        private Transform CreateSection(string sectionName)
+        /// Fallback for a pipe assembled at runtime rather than loaded from the built prefab: the
+        /// section carries the collider and a child carries the tube sprite, which is the split
+        /// <see cref="InsetTube"/> needs to shorten one without the other.
+        private Transform CreateSection(string sectionName, out Transform tube)
         {
             GameObject section = new GameObject(sectionName);
             section.transform.SetParent(transform, false);
-
-            SpriteRenderer renderer = section.AddComponent<SpriteRenderer>();
-            renderer.sprite = UnitSprite.Get();
-            renderer.color = _pipeColor;
 
             BoxCollider2D collider = section.AddComponent<BoxCollider2D>();
             collider.size = Vector2.one;
             collider.isTrigger = false;
 
+            GameObject tubeGo = new GameObject("Tube");
+            tubeGo.transform.SetParent(section.transform, false);
+            SpriteRenderer renderer = tubeGo.AddComponent<SpriteRenderer>();
+            renderer.sprite = UnitSprite.Get();
+            renderer.color = _pipeColor;
+
+            tube = tubeGo.transform;
             return section.transform;
         }
     }

@@ -27,6 +27,8 @@ namespace FlappyVoice.Editor
         private const string ConfigPath = "Assets/Settings/GameConfig.asset";
         private const string PrefabsFolder = "Assets/Prefabs";
         private const string PipePrefabPath = "Assets/Prefabs/Pipe.prefab";
+        // Named because WirePipeSections has to hand Pipe the tube apart from its section.
+        private const string TubeChildName = "Tube";
         private const string ArtFolder = "Assets/Art/Placeholder";
         private const string AudioFolder = "Assets/Audio";
         private const string BirdSpritePath = "Assets/Art/Placeholder/Bird.png";
@@ -120,13 +122,34 @@ namespace FlappyVoice.Editor
         // whenever it flew high. These three drive both the strip and the camera - BuildCamera
         // reads TunerScreenFraction to keep the playfield underneath.
         private const float TunerTopMarginPx = 20f;
-        private const float TunerBarHeightPx = 180f;
         private const float TunerBarWidthPx = 600f;
-        private const float TunerReadoutRowPx = 44f;
+        private const float TunerDialBottomPadPx = 44f;
+
+        // The strip's contents belong to the pill's FACE, not to its rect. tuner_pill.png is a
+        // raised rim around a dark face and its ends are strongly rounded, so a ruler drawn to the
+        // rect's edge hangs its outer ticks in the sky and the safe band squares off over a rounded
+        // end. These are that face, measured off the sprite through its own 9-slice: the borders
+        // are 72 sprite px at 256 px/unit against the canvas's 100 reference, so they stay 28 rect
+        // px wide whatever the rect is and the inset does not move with the strip's size.
+        private const float TunerFaceInsetXPx = 28f;
+        private const float TunerFaceInsetYPx = 18f;
+
+        // The face is the content box - ticks, letters, and the pad that centres the pair. The pill
+        // is that plus its rim, so the strip's height is derived from the two: a thicker rim can
+        // then only make the pill taller, never quietly crop the ruler inside it.
+        private const float TunerFaceHeightPx = 180f;
+        private const float TunerBarHeightPx = TunerFaceHeightPx + (TunerFaceInsetYPx * 2f);
 
         // Canvas match mode is height, so canvas pixels ARE a fixed fraction of the view.
         private const float TunerScreenFraction =
             (TunerTopMarginPx + TunerBarHeightPx) / 1920f;
+
+        // Gap between the bottom of the tuner strip and the top of the in-run score. The score is
+        // the strip's readout in another form - the note you are holding and what it has won you -
+        // so they read as one block at the top of the screen rather than two separate HUDs.
+        private const float ScoreLabelGapPx = 40f;
+        private const float ScoreLabelTopFromTop =
+            TunerTopMarginPx + TunerBarHeightPx + ScoreLabelGapPx;
 
         // Room demanded between the top of the playfield and the bottom of the strip, on top of
         // whichever is taller there - the bird or the gap opening.
@@ -173,13 +196,25 @@ namespace FlappyVoice.Editor
         private const float QuitButtonMarginPx = 36f;
 
         // The notice that the microphone never arrived: the same parchment as the consent panels,
-        // one sentence and one plaque, laid out on their vertical rhythm so the two do not appear
-        // to jump when one replaces the other.
+        // one message and the same button row, laid out on their vertical rhythm so the two do not
+        // appear to jump when one replaces the other.
         private const float MicNoticeMessageCenterFromTop = 0.432f * (820f * SmallSignAspect);
         private static readonly Vector2 MicNoticeMessageSize = new Vector2(620f, 330f);
 
+        // Gap between "BEST" and the numeral beside it. The word carries 4 px of tracking, so a
+        // wider gap here would read as part of that spacing rather than as a space.
+        private const float BestScoreRowSpacingPx = 14f;
+
+        // The ask and the reason for it, in one block. A size of its own rather than the consent
+        // title's: this is three lines where the consent panel has one of each, and at the title's
+        // 44 it would run past the message box and off the parchment face.
+        private const string MicNoticeMessage = "please enable microphone. this is a sound based game!";
+        private const float MicNoticeMessageFontSize = 38f * ConsentDesignScale;
+
         private static TMP_FontAsset cachedFont;
         private static bool fontResolved;
+        private static TMP_FontAsset cachedNumberFont;
+        private static bool numberFontResolved;
         private static int uiLayer = 5;
 
         [MenuItem("Flappy Voice/Build Game Scene")]
@@ -192,6 +227,8 @@ namespace FlappyVoice.Editor
 
             fontResolved = false;
             cachedFont = null;
+            numberFontResolved = false;
+            cachedNumberFont = null;
             int namedUiLayer = LayerMask.NameToLayer("UI");
             uiLayer = namedUiLayer >= 0 ? namedUiLayer : 5;
 
@@ -446,7 +483,9 @@ namespace FlappyVoice.Editor
             gapCollider.size = new Vector2(0.25f, gap);
 
             Pipe pipe = root.AddComponent<Pipe>();
-            WirePipeSections(pipe, top, bottom, gapTrigger, topBell, bottomBell);
+            WirePipeSections(pipe, top, bottom, gapTrigger, topBell, bottomBell,
+                top.transform.Find(TubeChildName).gameObject,
+                bottom.transform.Find(TubeChildName).gameObject);
 
             PrefabUtility.SaveAsPrefabAsset(root, PipePrefabPath);
             UnityEngine.Object.DestroyImmediate(root);
@@ -690,6 +729,10 @@ namespace FlappyVoice.Editor
 
         // Pipe.Setup sizes each section purely through localScale, so the section must stay a
         // 1x1 unit: any pre-sizing here gets multiplied by that scale into a screen-filling slab.
+        //
+        // The section itself is the collider, which has to line the gap right up to its edge, and
+        // the tube sprite is a child so Pipe.Setup can stop it short of that edge and leave the
+        // bell's flare to be what the gap is lined with.
         private static GameObject BuildPipeSection(string name, Transform parent, Sprite sprite, float y)
         {
             GameObject go = new GameObject(name);
@@ -697,15 +740,19 @@ namespace FlappyVoice.Editor
             go.transform.localPosition = new Vector3(0f, y, 0f);
             go.transform.localScale = Vector3.one;
 
-            SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
+            BoxCollider2D collider = go.AddComponent<BoxCollider2D>();
+            collider.size = Vector2.one;
+            collider.offset = Vector2.zero;
+
+            GameObject tube = new GameObject(TubeChildName);
+            tube.transform.SetParent(go.transform, false);
+            tube.transform.localScale = Vector3.one;
+
+            SpriteRenderer renderer = tube.AddComponent<SpriteRenderer>();
             renderer.sprite = sprite;
             renderer.drawMode = SpriteDrawMode.Simple;
             renderer.color = Color.white;
             renderer.sortingOrder = 5;
-
-            BoxCollider2D collider = go.AddComponent<BoxCollider2D>();
-            collider.size = Vector2.one;
-            collider.offset = Vector2.zero;
             return go;
         }
 
@@ -758,9 +805,12 @@ namespace FlappyVoice.Editor
 
             TextMeshProUGUI scoreLabel = NewText("ScoreLabel", scoreGroupGo.transform, "0", 170f,
                 TextAlignmentOptions.Center);
-            // Below the tuner strip, which owns the top of the screen.
-            Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -352f),
-                new Vector2(700f, 220f));
+            ApplyNumberFace(scoreLabel);
+            // Below the tuner strip, which owns the top of the screen - measured from the bottom
+            // of the strip rather than authored, so retuning the strip's height or margin carries
+            // the score with it instead of quietly closing the gap.
+            Place(scoreLabel.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -ScoreLabelTopFromTop), new Vector2(700f, 220f));
 
             GameObject singGroupGo = NewUI("StartScreen", root.transform);
             Stretch(singGroupGo);
@@ -902,10 +952,11 @@ namespace FlappyVoice.Editor
         // error - and a frame costs one transform move instead of a relayout of every tick.
         private static TunerBarUI BuildTunerBar(Transform canvas)
         {
-            const float barHeight = TunerBarHeightPx;
-            // Ticks own the top of the strip, letters the middle, readouts the bottom row, so
-            // nothing in the dial can end up drawn over the note or cents read-out.
-            const float readoutRowHeight = TunerReadoutRowPx;
+            // Everything inside the pill is measured against its face, not against its rect.
+            const float faceHeight = TunerFaceHeightPx;
+            // Ticks own the top of the strip and the letters sit under them; the rest is the pad
+            // that keeps the pair optically centred in the pill rather than resting on its floor.
+            const float bottomPad = TunerDialBottomPadPx;
             const float topMargin = TunerTopMarginPx;
             const float dialSemitones = 9f;
             float px = TunerBarUI.PixelsPerSemitone;
@@ -920,16 +971,18 @@ namespace FlappyVoice.Editor
             // still nine semitones wide and still clipped by the viewport, so the strip shows
             // about two and a half notes at a time - which is all a tuner needs to be read.
             Place(root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -topMargin),
-                new Vector2(TunerBarWidthPx, barHeight));
+                new Vector2(TunerBarWidthPx, TunerBarHeightPx));
 
             Image backdrop = NewImage("Backdrop", root.transform, new Color(0.04f, 0.05f, 0.09f, 0.72f));
             Stretch(backdrop.gameObject);
             ApplySlicedSprite(backdrop, TunerPillSpritePath, Color.white);
 
             // The dial is wider than the screen at portrait aspect, so it has to be clipped rather
-            // than left to spill its outer letters over the rest of the HUD.
+            // than left to spill its outer letters over the rest of the HUD. Inset to the pill's
+            // face rather than to its rect: clipped to the rect the ruler's outer ticks come out
+            // past the rounded ends and the safe band rides up over the rim.
             GameObject viewport = NewUI("Viewport", root.transform);
-            Stretch(viewport);
+            Stretch(viewport, TunerFaceInsetXPx, TunerFaceInsetYPx);
             viewport.AddComponent<RectMask2D>();
 
             // Inside the viewport so it is clipped like the dial, but NOT a child of the dial: its
@@ -940,11 +993,11 @@ namespace FlappyVoice.Editor
             // frame from the gap and the bird's radius - authoring a size here would be a lie.
             ApplySlicedSprite(safeBand, SafeBandSpritePath, new Color(1f, 1f, 1f, 0.3f));
             Place(safeBand.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero,
-                new Vector2(px * 2f, barHeight - readoutRowHeight));
+                new Vector2(px * 2f, faceHeight - bottomPad));
 
             GameObject dialGo = NewUI("Dial", viewport.transform);
             Place(dialGo, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero,
-                new Vector2(px * dialSemitones, barHeight));
+                new Vector2(px * dialSemitones, faceHeight));
             CanvasGroup dialGroup = dialGo.AddComponent<CanvasGroup>();
             dialGroup.interactable = false;
             dialGroup.blocksRaycasts = false;
@@ -958,7 +1011,7 @@ namespace FlappyVoice.Editor
                 TextMeshProUGUI label = NewText("Note" + i, dialGo.transform, "A", 68f,
                     TextAlignmentOptions.Center);
                 Place(label.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                    new Vector2((i - center) * px, readoutRowHeight + 4f), new Vector2(px * 0.92f, 88f));
+                    new Vector2((i - center) * px, bottomPad + 4f), new Vector2(px * 0.92f, 88f));
                 label.fontStyle = FontStyles.Bold;
                 labels[i] = label;
             }
@@ -966,20 +1019,13 @@ namespace FlappyVoice.Editor
             // Wider than the line it draws: needle.png is a 6 px core inside a soft glow, and at
             // the old 6 px rect the glow would be a single pixel. TunerBarUI tints this every
             // frame, which is why the sprite is white.
-            Image needle = NewImage("Needle", root.transform, Color.white);
+            //
+            // Inside the viewport, and last, so it is measured against the same face the ticks are
+            // and still draws over both them and the band.
+            Image needle = NewImage("Needle", viewport.transform, Color.white);
             ApplySlicedSprite(needle, NeedleSpritePath, Color.white);
             Place(needle.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f),
-                new Vector2(26f, barHeight - readoutRowHeight - 12f));
-
-            TextMeshProUGUI noteReadout = NewText("NoteReadout", root.transform, "--", 32f,
-                TextAlignmentOptions.Left);
-            Place(noteReadout.gameObject, Vector2.zero, Vector2.zero, new Vector2(22f, 4f),
-                new Vector2(220f, readoutRowHeight));
-
-            TextMeshProUGUI centsReadout = NewText("CentsReadout", root.transform, string.Empty, 32f,
-                TextAlignmentOptions.Right);
-            Place(centsReadout.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-22f, 4f),
-                new Vector2(220f, readoutRowHeight));
+                new Vector2(26f, faceHeight - bottomPad - 12f));
 
             SerializedObject so = new SerializedObject(tuner);
             SetRef(so, "rootGroup", rootGroup);
@@ -987,8 +1033,6 @@ namespace FlappyVoice.Editor
             SetRef(so, "dialGroup", dialGroup);
             SetRef(so, "safeBand", safeBand.rectTransform);
             SetRef(so, "needle", needle);
-            SetRef(so, "noteReadout", noteReadout);
-            SetRef(so, "centsReadout", centsReadout);
             SetRefArray(so, "noteLabels", labels);
             so.ApplyModifiedPropertiesWithoutUndo();
             return tuner;
@@ -1026,6 +1070,11 @@ namespace FlappyVoice.Editor
             Place(band.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
                 new Vector2(size.x * 0.34f, size.y * 0.78f));
 
+            // One semitone in legend pixels. The ruler below is stepped off the SAME figure, so
+            // the tall ticks land under the letters instead of drifting a few pixels wide of them -
+            // a legend whose ticks disagree with its letters teaches the dial wrong.
+            float semitoneWidth = size.x * 0.30f;
+
             // Any three adjacent semitones would do; these match the note letters in the mock-up.
             string[] letters = { "F#", "G#", "A#" };
             for (int i = 0; i < letters.Length; i++)
@@ -1033,17 +1082,19 @@ namespace FlappyVoice.Editor
                 TextMeshProUGUI letter = NewText("Note" + i, legend.transform, letters[i], 50f,
                     TextAlignmentOptions.Center);
                 Place(letter.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                    new Vector2((i - 1) * size.x * 0.30f, size.y * 0.14f), new Vector2(150f, 70f));
+                    new Vector2((i - 1) * semitoneWidth, size.y * 0.14f), new Vector2(150f, 70f));
                 letter.fontStyle = FontStyles.Bold;
                 letter.color = new Color(1f, 1f, 1f, i == 1 ? 1f : 0.7f);
             }
 
+            const int legendTicksPerSemitone = 5;
             for (int i = -6; i <= 6; i++)
             {
-                bool onNote = i % 5 == 0;
+                bool onNote = i % legendTicksPerSemitone == 0;
                 Image tick = NewImage("Tick" + i, legend.transform, new Color(1f, 1f, 1f, onNote ? 0.85f : 0.4f));
                 Place(tick.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                    new Vector2(i * size.x * 0.062f, 18f), new Vector2(onNote ? 4f : 3f, onNote ? 26f : 16f));
+                    new Vector2(i * semitoneWidth / legendTicksPerSemitone, 18f),
+                    new Vector2(onNote ? 4f : 3f, onNote ? 26f : 16f));
             }
 
             Image needle = NewImage("Needle", legend.transform, Color.white);
@@ -1177,9 +1228,9 @@ namespace FlappyVoice.Editor
             return consentFlow;
         }
 
-        // The microphone notice: same parchment, same rhythm and the same timber plaque as the
-        // consent panels, because it is the reply to the ask they made. Its own object rather than
-        // a third consent step - it has to be able to come back after that flow has finished.
+        // The microphone notice: same parchment, same rhythm and the same plaques as the consent
+        // panels, because it is the reply to the ask they made. Its own object rather than a third
+        // consent step - it has to be able to come back after that flow has finished.
         private static MicrophoneNoticeUI BuildMicrophoneNotice(Transform canvas)
         {
             GameObject root = NewUI("MicrophoneNotice", canvas);
@@ -1204,26 +1255,55 @@ namespace FlappyVoice.Editor
             Stretch(parchment.gameObject);
             ApplySlicedSprite(parchment, SmallSignSpritePath, Color.white);
 
-            // One sentence, no title: a heading and a message would only say the same thing twice.
-            // Sized to wrap to two lines inside the 620 px the corner flowers leave free, and
-            // centred in a tall box so one line or two both sit on the same optical centre.
-            TextMeshProUGUI message = NewText("Message", panel.transform, "please enable the microphone!",
-                44f * ConsentDesignScale, TextAlignmentOptions.Center);
+            // One block of text, no title: a heading would only say the ask a second time. The
+            // reason is part of the message rather than a line under it, because a player who is
+            // being asked to leave the game and change a browser setting deserves to be told why
+            // in the same breath. Sized to wrap inside the 620 px the corner flowers leave free,
+            // and centred in a tall box so two lines or three sit on the same optical centre.
+            TextMeshProUGUI message = NewText("Message", panel.transform, MicNoticeMessage,
+                MicNoticeMessageFontSize, TextAlignmentOptions.Center);
             Place(message.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
                 new Vector2(0f, -MicNoticeMessageCenterFromTop), MicNoticeMessageSize);
             message.color = InkColor;
 
-            // Timber, not brass: there is no competing option to outweigh, which is the same rule
-            // that gives the consent flow's lone "OK" its plaque.
-            Button dismiss = NewButton("DismissButton", panel.transform, "OK",
-                FromSmallSignTop(ConsentButtonRowCenterFromTop), ConsentButtonSize, ButtonSpritePath,
-                32f * ConsentDesignScale);
+            // The consent flow's row, for the same reason it has one: two plaques abutting at the
+            // panel's centre, positioned by layout rather than by a pair of authored offsets, so
+            // the pair here sits exactly where the camera step's pair does.
+            GameObject buttonRow = NewUI("ButtonRow", panel.transform);
+            Place(buttonRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -ConsentButtonRowCenterFromTop),
+                new Vector2(ConsentButtonSize.x * 2f, ConsentButtonSize.y));
+            HorizontalLayoutGroup row = buttonRow.AddComponent<HorizontalLayoutGroup>();
+            row.childAlignment = TextAnchor.MiddleCenter;
+            row.spacing = 0f;
+            row.childControlWidth = false;
+            row.childControlHeight = false;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = false;
+
+            // Leaving on the left and asking again on the right, as the camera step has its "NO"
+            // and "YES!". Timber for the exit and brass for the "OK": the plaque tracks whether
+            // there is a competing option to outweigh, and now that there are two answers there is.
+            Button exit = NewButton("ExitButton", buttonRow.transform, "EXIT",
+                Vector2.zero, ConsentButtonSize, ButtonSpritePath, 32f * ConsentDesignScale);
+
+            // Still "OK", not "TRY AGAIN": the panel is a piece of news before it is a question,
+            // and the tap that acknowledges it is the same tap the browser needs to be asked on.
+            Button retry = NewButton("RetryButton", buttonRow.transform, "OK",
+                Vector2.zero, ConsentButtonSize, ButtonPrimarySpritePath, 32f * ConsentDesignScale);
+            // Ink, not gold: the brass plaque is light and a gold label on it would vanish.
+            retry.GetComponentInChildren<TextMeshProUGUI>().color = InkColor;
+
+            // A headless build never ticks a canvas, so the row has to be rebuilt by hand or the
+            // saved scene keeps the authored transforms and both buttons sit at the row's centre.
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)buttonRow.transform);
 
             panels.SetActive(false);
 
             SerializedObject so = new SerializedObject(notice);
             SetRef(so, "root", panels);
-            SetRef(so, "dismissButton", dismiss);
+            SetRef(so, "exitButton", exit);
+            SetRef(so, "retryButton", retry);
             so.ApplyModifiedPropertiesWithoutUndo();
             return notice;
         }
@@ -1292,17 +1372,41 @@ namespace FlappyVoice.Editor
             caption.color = MutedInkColor;
 
             TextMeshProUGUI finalScore = NewText("FinalScore", card.transform, "0", 145f, TextAlignmentOptions.Center);
+            ApplyNumberFace(finalScore);
             Place(finalScore.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -534f),
                 new Vector2(620f, 165f));
             finalScore.fontStyle = FontStyles.Bold;
             finalScore.color = InkColor;
 
-            TextMeshProUGUI bestScore = NewText("BestScore", card.transform, "BEST 0", 50f,
-                TextAlignmentOptions.Center);
-            Place(bestScore.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -706f),
+            // Two labels in a row rather than one "BEST 42" string: the numeral is set in the
+            // number face and the word is not, so they cannot be the same TMP_Text. Laid out by
+            // the group so the pair stays optically centred as the number grows a digit.
+            GameObject bestRow = NewUI("BestScore", card.transform);
+            Place(bestRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -706f),
                 new Vector2(620f, 62f));
-            bestScore.characterSpacing = 4f;
+            HorizontalLayoutGroup bestLayout = bestRow.AddComponent<HorizontalLayoutGroup>();
+            bestLayout.childAlignment = TextAnchor.MiddleCenter;
+            bestLayout.spacing = BestScoreRowSpacingPx;
+            bestLayout.childControlWidth = true;
+            bestLayout.childControlHeight = true;
+            bestLayout.childForceExpandWidth = false;
+            bestLayout.childForceExpandHeight = false;
+
+            // Baseline alignment, not centre: the two faces have different vertical metrics, and
+            // centring each in its own box would sit the digits a few pixels off the word's feet.
+            TextMeshProUGUI bestCaption = NewText("Caption", bestRow.transform, "BEST", 50f,
+                TextAlignmentOptions.Baseline);
+            bestCaption.characterSpacing = 4f;
+            bestCaption.color = MutedInkColor;
+
+            TextMeshProUGUI bestScore = NewText("Value", bestRow.transform, "0", 50f,
+                TextAlignmentOptions.Baseline);
+            ApplyNumberFace(bestScore);
             bestScore.color = MutedInkColor;
+
+            // A headless build never ticks a canvas, so the row has to be rebuilt by hand or the
+            // saved scene keeps both labels stacked at its centre.
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)bestRow.transform);
 
             // Sits ON the best-score line, and EndScreenUI hides that line while it shows. A row
             // of its own would cost ~60 px of parchment face, and the face runs out before the
@@ -1345,6 +1449,7 @@ namespace FlappyVoice.Editor
             SetRef(so, "scoreCardRoot", (RectTransform)captureRect.transform);
             SetRef(so, "uiCamera", camera);
             SetRef(so, "finalScoreLabel", finalScore);
+            SetRef(so, "bestScoreRow", bestRow);
             SetRef(so, "bestScoreLabel", bestScore);
             SetRef(so, "newBestBadge", badge.gameObject);
             SetRef(so, "playAgainButton", playAgain);
@@ -1429,11 +1534,19 @@ namespace FlappyVoice.Editor
 
         private static void Stretch(GameObject go)
         {
+            Stretch(go, 0f, 0f);
+        }
+
+        /// Fills the parent, held off its edges by the given padding. Used where a sprite's drawn
+        /// face is smaller than the rect it is stretched over, so whatever sits on it has to be
+        /// inset by the difference rather than by the rect.
+        private static void Stretch(GameObject go, float insetX, float insetY)
+        {
             RectTransform rect = (RectTransform)go.transform;
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            rect.offsetMin = new Vector2(insetX, insetY);
+            rect.offsetMax = new Vector2(-insetX, -insetY);
         }
 
         private static void Place(GameObject go, Vector2 anchor, Vector2 pivot, Vector2 position, Vector2 size)
@@ -1492,6 +1605,42 @@ namespace FlappyVoice.Editor
             {
                 text.fontSharedMaterial = face;
             }
+        }
+
+        // The score numerals are Gulzar, not the sign face. Applied after NewText rather than
+        // inside it: this is the exception, and every other string in the app is set in the face
+        // the art is drawn in.
+        private static void ApplyNumberFace(TMP_Text text)
+        {
+            TMP_FontAsset font = ResolveNumberFont();
+            if (font != null)
+            {
+                text.font = font;
+            }
+        }
+
+        // Digits only, and deliberately without a fallback: if the asset is missing this leaves
+        // the label in the sign face rather than silently drawing a blank score.
+        private static TMP_FontAsset ResolveNumberFont()
+        {
+            if (numberFontResolved)
+            {
+                return cachedNumberFont;
+            }
+            numberFontResolved = true;
+            try
+            {
+                cachedNumberFont = FontBuilder.EnsureNumberFontAsset();
+            }
+            catch (Exception)
+            {
+                cachedNumberFont = null;
+            }
+            if (cachedNumberFont == null)
+            {
+                Debug.LogWarning("[SceneBuilder] No number font asset. Run Flappy Voice/Build Font Asset.");
+            }
+            return cachedNumberFont;
         }
 
         private static TMP_FontAsset ResolveFont()
@@ -1585,7 +1734,7 @@ namespace FlappyVoice.Editor
         }
 
         private static void WirePipeSections(Pipe pipe, GameObject top, GameObject bottom, GameObject gap,
-            GameObject topBell, GameObject bottomBell)
+            GameObject topBell, GameObject bottomBell, GameObject topTube, GameObject bottomTube)
         {
             SerializedObject so = new SerializedObject(pipe);
             SerializedProperty property = so.GetIterator();
@@ -1598,9 +1747,14 @@ namespace FlappyVoice.Editor
                 }
                 string name = property.name.ToLowerInvariant();
                 bool isBell = name.Contains("bell");
+                // The tube is a child of its section, so it has to be matched before the plain
+                // top/bottom test that would otherwise hand back the section itself.
+                bool isTube = name.Contains("tube");
                 GameObject source =
                     isBell && (name.Contains("top") || name.Contains("upper")) ? topBell :
                     isBell ? bottomBell :
+                    isTube && (name.Contains("top") || name.Contains("upper")) ? topTube :
+                    isTube ? bottomTube :
                     name.Contains("top") || name.Contains("upper") ? top :
                     name.Contains("bottom") || name.Contains("lower") ? bottom :
                     name.Contains("gap") || name.Contains("trigger") || name.Contains("score") ? gap : null;

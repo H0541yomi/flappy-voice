@@ -1,0 +1,15 @@
+{
+  "name": "Flappy Song",
+  "description": "Sing to fly! Dodge incoming pipes by singing the right notes!",
+  "genres": [
+    "arcade",
+    "party"
+  ],
+  "status": "local",
+  "kind": "original",
+  "orientation": "portrait",
+  "version": 1,
+  "priority": 68,
+  "engine": "unity",
+  "publishDir": "dist"
+}

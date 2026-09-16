@@ -165,7 +165,7 @@ namespace FlappyVoice.Gameplay
             if (microphoneNotice != null)
             {
                 microphoneNotice.Configure(hud);
-                microphoneNotice.OnDismissed += RequestMicrophone;
+                microphoneNotice.OnRetryRequested += RequestMicrophone;
             }
 
             if (quitButton != null)
@@ -195,7 +195,7 @@ namespace FlappyVoice.Gameplay
 
             if (microphoneNotice != null)
             {
-                microphoneNotice.OnDismissed -= RequestMicrophone;
+                microphoneNotice.OnRetryRequested -= RequestMicrophone;
             }
         }
 
@@ -207,10 +207,14 @@ namespace FlappyVoice.Gameplay
 
         // Tiny stub to start microphone routine, writing this lets the consent flow UI unsubscribe later.
         //
-        // Two callers now - the consent panel's OK and the notice's dismiss - so it guards against
-        // a second loop: on the web the routine retries forever, and a second one would double the
+        // Two callers now - the consent panel's OK and the notice's OK - so it guards against a
+        // second loop: on the web the routine retries forever, and a second one would double the
         // request rate against the plugin's own attempt budget. The guard is also what makes the
         // notice show once per deliberate ask rather than once per failed poll.
+        //
+        // The notice is left showing across this. Asking again is not an answer, so the panel only
+        // comes down where the grant actually lands, below; a second refusal re-runs the loop with
+        // the parchment already up and ShowMicrophoneNoticeRoutine's Show() is then a no-op.
         private void RequestMicrophone()
         {
             if (microphoneRoutineRunning)
@@ -231,9 +235,14 @@ namespace FlappyVoice.Gameplay
         // Deferred rather than shown outright: this is raised while the consent flow may still be
         // on its camera step, and the two are the same parchment. Stacking them reads as one
         // broken sign, so the notice waits its turn.
+        //
+        // Waits on IsComplete rather than on the parchment being gone. The grant is asked for from
+        // inside the microphone step's tap, so a browser that refuses instantly raises this while
+        // the flow is mid-transition to the camera step; a wait that only watched IsShowing could
+        // be satisfied by that gap and put the notice up over the camera ask.
         private IEnumerator ShowMicrophoneNoticeRoutine()
         {
-            while (consentFlow != null && consentFlow.IsShowing)
+            while (consentFlow != null && !consentFlow.IsComplete)
             {
                 yield return null;
             }
@@ -287,6 +296,8 @@ namespace FlappyVoice.Gameplay
                         // gesture, so chaining the camera onto a microphone grant would spend a
                         // prompt the player has not agreed to yet.
                         SetStartHint(null);
+                        // The one place the notice comes down: its own OK only asks again, so
+                        // recording starting is the only thing that can have answered it.
                         if (microphoneNotice != null)
                         {
                             microphoneNotice.Hide();

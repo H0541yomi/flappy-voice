@@ -21,6 +21,12 @@ namespace FlappyVoice.Platform
         public const bool IsBackend = false;
 #endif
 
+        // The payload FlappyVoiceHost.jslib posts, kept here only so the log above can show it.
+        // The jslib builds its own copy: it is the one that has a window to post from, and a C#
+        // string marshalled across for every quit would be a second place to get the schema
+        // wrong. Keep the two in step.
+        private const string QuitMessage = "{\"schema_version\":1,\"action\":\"quit\"}";
+
         /// <summary>
         /// Asks the host to close the game. Fire-and-forget: the host decides what happens next
         /// and there is no reply to wait for, so callers must not expect this to have torn
@@ -31,6 +37,7 @@ namespace FlappyVoice.Platform
 #if UNITY_WEBGL && !UNITY_EDITOR
             try
             {
+                Debug.Log($"[HostBridge] posting to VariantOriginalsHost: {QuitMessage}");
                 FV_Host_Quit();
             }
             catch (Exception e)
@@ -39,8 +46,9 @@ namespace FlappyVoice.Platform
             }
 #else
             // Off the web there is no host to ask, and Application.Quit is a lie in the editor.
-            // Logging keeps the button testable without pretending the game went anywhere.
-            Debug.Log("[HostBridge] quit requested; no host on this platform.");
+            // Logging the message the jslib would post keeps the button testable in the Editor -
+            // a tap that prints this is a tap that reaches window.VariantOriginalsHost on Web.
+            Debug.Log($"[HostBridge] quit requested; on Web this posts to VariantOriginalsHost: {QuitMessage}");
 #endif
         }
 

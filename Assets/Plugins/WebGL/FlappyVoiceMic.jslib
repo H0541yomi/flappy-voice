@@ -17,9 +17,6 @@ const FlappyVoiceMicPlugin = {
         BLOCKED: 3,
         UNSUPPORTED: 4,
 
-        // A tap may land while getUserMedia from the previous tap is still pending, and Safari
-        // rejects a second concurrent request outright, so retries are counted rather than free.
-        MAX_ATTEMPTS: 64,
         // ~10ms at 48kHz. Small enough that the worklet hop adds no audible tracking lag.
         CHUNK: 512,
         // A backgrounded tab or an interrupted stream stops filling the ring without any event to
@@ -28,7 +25,6 @@ const FlappyVoiceMicPlugin = {
         STALE_MS: 250,
 
         status: 0,
-        attempts: 0,
         sampleRate: 0,
         lastWriteMs: 0,
         ring: null,
@@ -83,6 +79,12 @@ const FlappyVoiceMicPlugin = {
             this.lastWriteMs = performance.now();
         },
 
+        // Re-armed after every rejection, with no cap on how many times: a player who keeps
+        // tapping keeps getting asked. Nothing here can run away, because one arming buys exactly
+        // one attempt - the handler disarms itself before it calls open(), and only the catch a
+        // rejection lands in arms it again - so the ask is paced by the browser's own prompt.
+        // Safari's refusal of a second concurrent getUserMedia is handled by the PENDING guard in
+        // open(), which is why this needs no attempt budget of its own.
         armGesture: function () {
             if (this.gestureHandler || typeof window === 'undefined') return;
 
@@ -164,12 +166,6 @@ const FlappyVoiceMicPlugin = {
                 this.status = this.UNSUPPORTED;
                 return;
             }
-            if (this.attempts >= this.MAX_ATTEMPTS) {
-                this.status = this.BLOCKED;
-                return;
-            }
-
-            this.attempts += 1;
             this.status = this.PENDING;
 
             try {
@@ -253,7 +249,7 @@ const FlappyVoiceMicPlugin = {
 
     // The caller polls and re-asks while it waits, so a request that is already parked on a tap
     // must not re-run getUserMedia: the browser would reject every one of those without ever
-    // prompting, and the attempt budget meant for real taps would be gone in seconds.
+    // prompting, and each rejection would re-arm the listener the real tap is waiting on.
     FV_Mic_Request: function () {
         if (FVMic.gestureHandler) return;
         FVMic.open();
@@ -263,7 +259,6 @@ const FlappyVoiceMicPlugin = {
         FVMic.disarmGesture();
         FVMic.close();
         FVMic.status = FVMic.IDLE;
-        FVMic.attempts = 0;
     },
 
     FV_Mic_GetStatus: function () {

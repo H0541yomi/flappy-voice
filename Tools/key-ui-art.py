@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Keys the magenta out of the raw UI generations and writes the game-ready PNGs.
 
-Raw art is generated on flat #FF00FF (see Docs/asset-prompts.md) because models are
-unreliable at alpha. This is the processing pass: key, despill, trim, resize.
+Raw art is generated on flat #FF00FF because models are unreliable at alpha. This is
+the processing pass: key, despill, trim, resize.
 
     python3 Tools/key-ui-art.py
 
@@ -62,6 +62,12 @@ class Target(NamedTuple):
     # that lands nearer 0.09 survives the shared floor and leaves a pale rectangle that is
     # invisible against a dark backdrop and obvious on parchment.
     alpha_floor: Optional[float] = None
+    # Clears a border ring this fraction of the short side wide before the trim. JPEG ringing along
+    # the drop's own edge keys to a few percent of coverage - the same magnitude as a soft glow, so
+    # no alpha floor can tell the two apart - and a speck of it in a corner drags the trim bounds
+    # out to the edge. The sprite then resizes off-centre, which on the needle is a tuner that
+    # reads a few cents sharp of where its line is drawn. Only set it where the drop has margin.
+    trim_border: float = 0.0
 
 
 # The button is rotated a quarter turn first. The raw plaque is portrait, so its brush
@@ -70,7 +76,7 @@ class Target(NamedTuple):
 # the plank seams divide it crosswise, which is what a wide timber plaque looks like -
 # and the squash needed afterwards is 2.2x instead of 7.2x.
 TARGETS = {
-    "needle": Target(size=(32, 256)),
+    "needle": Target(size=(32, 256), trim_border=0.02),
     "start_sign": Target(size=(1024, None), fit=True),
     "button": Target(size=(640, 160), rotate=90),
     # Padded, not fitted. The two hearts are different drawings and trim to different aspects
@@ -113,8 +119,15 @@ def key_magenta(rgb, alpha_floor=ALPHA_FLOOR):
     return np.dstack([fg / 255.0, alpha])
 
 
-def trim(rgba):
+def trim(rgba, border=0.0):
     alpha = rgba[..., 3]
+    if border > 0.0:
+        margin = max(1, round(border * min(alpha.shape)))
+        alpha = alpha.copy()
+        alpha[:margin] = 0.0
+        alpha[-margin:] = 0.0
+        alpha[:, :margin] = 0.0
+        alpha[:, -margin:] = 0.0
     rows = np.where(alpha.max(axis=1) > 0.01)[0]
     cols = np.where(alpha.max(axis=0) > 0.01)[0]
     if len(rows) == 0 or len(cols) == 0:
@@ -135,7 +148,8 @@ def load_rgba(path, extension, alpha_floor=ALPHA_FLOOR):
 def process(name, target):
     source_path = os.path.join(RAW_DIR, f"{name}.{target.extension}")
     rgba = trim(load_rgba(source_path, target.extension,
-                          target.alpha_floor if target.alpha_floor is not None else ALPHA_FLOOR))
+                          target.alpha_floor if target.alpha_floor is not None else ALPHA_FLOOR),
+                target.trim_border)
 
     image = Image.fromarray((rgba * 255.0 + 0.5).astype(np.uint8), mode="RGBA")
     if target.rotate:

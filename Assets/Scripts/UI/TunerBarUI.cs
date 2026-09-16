@@ -40,8 +40,6 @@ namespace FlappyVoice.UI
         [SerializeField] private TMP_Text[] noteLabels = new TMP_Text[NoteSlotCount];
         [SerializeField] private RectTransform safeBand;
         [SerializeField] private Graphic needle;
-        [SerializeField] private TMP_Text noteReadout;
-        [SerializeField] private TMP_Text centsReadout;
 
         [SerializeField] private float pixelsPerSemitone = PixelsPerSemitone;
         [SerializeField] private float silentAlpha = 0.3f;
@@ -56,16 +54,7 @@ namespace FlappyVoice.UI
         private const float GapLookBehindUnits = 1.2f;
         private const float FallbackBodyRadiusUnits = 0.36f;
 
-        private const string SilentNoteText = "--";
-        private const string SilentCentsText = "";
-
-        // Cents are only ever reported in -50..+50, so every string the readout can need is
-        // interned up front rather than formatted on a frame where the note drifts.
-        private static readonly string[] CentsStrings = BuildCentsStrings();
-
         private int renderedNearestMidi = int.MinValue;
-        private int renderedNoteReadoutMidi = int.MinValue;
-        private int renderedCents = int.MinValue;
         private int renderedOutOfRange = -1;
         private int renderedSafe = -1;
         private bool renderedSafeBandVisible = true;
@@ -155,7 +144,6 @@ namespace FlappyVoice.UI
             }
 
             int nearest = PitchMath.RoundToSemitone(midi);
-            float cents = PitchMath.CentsFromNearestSemitone(midi);
 
             if (dial != null)
             {
@@ -171,12 +159,10 @@ namespace FlappyVoice.UI
             {
                 renderedOutOfRange = outOfRangeKey;
                 renderedNearestMidi = int.MinValue;
-                renderedNoteReadoutMidi = int.MinValue;
             }
 
             RenderLabels(nearest);
             RenderSafeBand(midi);
-            RenderReadouts(nearest, cents);
         }
 
         private void RenderLabels(int nearestMidi)
@@ -287,31 +273,6 @@ namespace FlappyVoice.UI
             safeBand.gameObject.SetActive(value);
         }
 
-        private void RenderReadouts(int nearestMidi, float cents)
-        {
-            if (noteReadout != null && nearestMidi != renderedNoteReadoutMidi)
-            {
-                renderedNoteReadoutMidi = nearestMidi;
-                // Concatenated only when the note actually changes, which is orders of magnitude
-                // rarer than a frame.
-                noteReadout.SetText(PitchMath.NoteNameForMidi(nearestMidi) + OctaveNumber(nearestMidi));
-                noteReadout.color = renderedOutOfRange == 1 ? outOfRangeLabelColor : inRangeLabelColor;
-            }
-
-            int rounded = Mathf.Clamp(Mathf.RoundToInt(cents), -50, 50);
-            if (centsReadout != null && rounded != renderedCents)
-            {
-                renderedCents = rounded;
-                centsReadout.SetText(CentsStrings[rounded + 50]);
-            }
-        }
-
-        // Scientific pitch notation: MIDI 60 is C4.
-        private static int OctaveNumber(int midi)
-        {
-            return Mathf.FloorToInt(midi / 12f) - 1;
-        }
-
         private void SetVoiced(bool voiced)
         {
             if (voiced == renderedVoiced)
@@ -331,35 +292,18 @@ namespace FlappyVoice.UI
                 return;
             }
 
-            renderedCents = int.MinValue;
             renderedSafe = -1;
             SetSafeBandVisible(false);
             if (needle != null) needle.color = offTuneColor;
-            if (noteReadout != null) noteReadout.SetText(SilentNoteText);
-            if (centsReadout != null) centsReadout.SetText(SilentCentsText);
-            renderedNoteReadoutMidi = int.MinValue;
         }
 
         private void InvalidateRendered()
         {
             renderedNearestMidi = int.MinValue;
-            renderedNoteReadoutMidi = int.MinValue;
-            renderedCents = int.MinValue;
             renderedOutOfRange = -1;
             renderedSafe = -1;
             renderedSafeBandVisible = true;
             renderedVoiced = true;
-        }
-
-        private static string[] BuildCentsStrings()
-        {
-            string[] values = new string[101];
-            for (int i = 0; i < values.Length; i++)
-            {
-                int cents = i - 50;
-                values[i] = cents > 0 ? "+" + cents.ToString() + "¢" : cents.ToString() + "¢";
-            }
-            return values;
         }
     }
 }

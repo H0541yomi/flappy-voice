@@ -14,31 +14,89 @@ namespace FlappyVoice.Platform
         private INativeShare native;
         private readonly Vector3[] corners = new Vector3[4];
 
+        /// <summary>
+        /// How the last share ended. The end screen listens so it can say "Link copied" on the
+        /// browsers that have no share sheet, which is the only sign the player gets that a tap
+        /// put anything anywhere.
+        /// </summary>
+        public event Action<ShareOutcome> OnShareResult;
+
         public INativeShare Native
         {
-            get => native ??= new LogOnlyNativeShare();
+            get => native ??= CreateDefaultBackend();
             set => native = value;
+        }
+
+        /// <summary>
+        /// Pick the backend for the platform. On Web the browser is the only thing that can share
+        /// at all -- the Variant host bridge carries quit and orientation and nothing else -- so
+        /// there is no host action to prefer over it.
+        /// </summary>
+        private INativeShare CreateDefaultBackend()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return new WebNativeShare(gameObject.name);
+#else
+            return new LogOnlyNativeShare();
+#endif
         }
 
         public void ShareScoreCard(int score, int bestScore, RectTransform cardRoot, Camera uiCamera)
         {
             string message = bestScore > 0 && score >= bestScore
-                ? $"New best! I scored {score} singing Flappy Voice."
-                : $"I scored {score} singing Flappy Voice. Best: {bestScore}.";
+                ? $"New best! I scored {score} singing Flappy Song."
+                : $"I scored {score} singing Flappy Song. Best: {bestScore}.";
 
-            string path = CaptureCard(cardRoot, uiCamera);
-            if (string.IsNullOrEmpty(path))
+            INativeShare backend = Native;
+            string path = null;
+            if (backend.WantsScoreCard)
             {
-                Debug.LogWarning("[ShareService] score card capture failed; sharing text only.");
+                path = CaptureCard(cardRoot, uiCamera);
+                if (string.IsNullOrEmpty(path))
+                {
+                    Debug.LogWarning("[ShareService] score card capture failed; sharing text only.");
+                }
             }
 
             try
             {
-                Native.Share(path, message);
+                backend.Share(path, message, ShareLink.Url);
             }
             catch (Exception e)
             {
                 Debug.LogError($"[ShareService] native share threw: {e}");
+                OnShareResult?.Invoke(ShareOutcome.Failed);
+                return;
+            }
+
+            if (backend.ImmediateOutcome.HasValue)
+            {
+                OnShareResult?.Invoke(backend.ImmediateOutcome.Value);
+            }
+        }
+
+        /// <summary>
+        /// Called by name from FlappyVoiceShare.jslib once the browser's share promise settles.
+        /// Public and loosely typed because `SendMessage` is the only channel back from a jslib,
+        /// and it can only carry a single string.
+        /// </summary>
+        public void OnWebShareResult(string outcome)
+        {
+            switch (outcome)
+            {
+                case "shared":
+                    OnShareResult?.Invoke(ShareOutcome.Shared);
+                    break;
+                case "copied":
+                    OnShareResult?.Invoke(ShareOutcome.Copied);
+                    break;
+                case "cancelled":
+                    OnShareResult?.Invoke(ShareOutcome.Cancelled);
+                    break;
+                default:
+                    Debug.LogWarning($"[ShareService] share reported \"{outcome}\"; the link is {ShareLink.Url}");
+                    OnShareResult?.Invoke(ShareOutcome.Failed);
+                    break;
             }
         }
 

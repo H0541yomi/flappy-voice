@@ -1,0 +1,240 @@
+<!doctype html>
+<!--
+  Variant's shared Web shell, restyled for this game.
+
+  Deliberately diverged from the canonical copy at
+  scripts/unity/package/Editor/Templates/Variant/index.html, so build.mjs's freshness check warns
+  on every build here - that warning is expected, and the fix for an upstream change is to port it
+  in by hand rather than to copy the canonical file over this one.
+
+  Everything below the <style> block is the shared shell unchanged. What changed is colour and
+  type: the page is the game's own sky, the wordmark is the face the signs are lettered in, and
+  the bar is the tuner's in-tune green, so the load reads as the game arriving rather than as a
+  neutral page in front of it. The last painted frame here is the colour Unity clears to, so the
+  handover is a wordmark going out, not a background changing.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#293357" />
+    <link rel="icon" href="data:," />
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <script>
+      // The native app is portrait by default. Games that declare an orientation
+      // ask before Unity boots so the first playable frame has the right shape.
+      (() => {
+        const orientation = {{{ JSON.stringify(ORIGINALS_ORIENTATION) }}};
+        if (orientation !== "landscape" && orientation !== "portrait") return;
+        try {
+          globalThis.VariantOriginalsHost?.postMessage(JSON.stringify({
+            schema_version: 1,
+            action: "orientation",
+            value: orientation,
+          }));
+        } catch (_) {}
+      })();
+    </script>
+    <style>
+      /* SkyColor, the camera's clear colour: the page and the first game frame are one colour. */
+      :root { color-scheme: dark; background: #293357; }
+      /* The face the signs are lettered in. Swaps in late rather than holding the wordmark back -
+         the shell has to say the game's name while several megabytes are still in flight. */
+      @font-face {
+        font-family: 'Sign Face';
+        src: url('sign-face.ttf') format('truetype');
+        font-display: swap;
+      }
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+      body { background: #293357; font-family: 'Sign Face', Georgia, 'Times New Roman', serif; }
+      #unity-canvas {
+        position: fixed;
+        inset: 0;
+        display: block;
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
+        border: 0;
+        background: #293357;
+        touch-action: none;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 26px;
+        padding: max(24px, var(--vo-safe-top, env(safe-area-inset-top, 0px))) max(24px, var(--vo-safe-right, env(safe-area-inset-right, 0px))) max(24px, var(--vo-safe-bottom, env(safe-area-inset-bottom, 0px))) max(24px, var(--vo-safe-left, env(safe-area-inset-left, 0px)));
+        color: #EDE0BD;
+        background: #293357;
+        text-align: center;
+      }
+      #loading[hidden] { display: none; }
+      /* Parchment, not white: the same cream the signs are printed on. Tracking is light because
+         the face is small-caps already - the wide letterspacing a monospace wordmark wants pulls
+         these apart. */
+      #loading-title {
+        font-size: clamp(30px, 8vw, 52px);
+        font-weight: normal;
+        letter-spacing: .05em;
+        line-height: 1.1;
+        max-width: 700px;
+      }
+      /* The tuner strip in miniature: its backdrop, its pill shape, and its in-tune green filling
+         left to right the way the needle finds a note. */
+      #track {
+        width: min(62vw, 280px);
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(10, 13, 23, .72);
+      }
+      #progress {
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        background: #5CD982;
+        transform: scaleX(0);
+        transform-origin: left center;
+        transition: transform 600ms ease-out;
+        animation: loading-breathe 1.6s ease-in-out infinite;
+        will-change: transform, opacity;
+      }
+      /* A held note rather than a barber's pole: the bar is the only moving thing on the page and
+         a shimmer would read as a second, faster progress. */
+      @keyframes loading-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .62; } }
+      /* A failure is the one thing here that gets a sign of its own: ink on parchment, because
+         that is what this game puts words on. */
+      #loading[data-failed] { gap: 0; }
+      #loading[data-failed] strong {
+        display: block;
+        max-width: min(88vw, 620px);
+        padding: 22px 26px;
+        border-radius: 6px;
+        background: #EDE0BD;
+        color: #501713;
+        font-size: 28px;
+        font-weight: normal;
+        letter-spacing: .04em;
+      }
+      /* Muted ink, and only ever inside the card: on the sky it would be unreadable. */
+      #loading[data-failed] small {
+        display: block;
+        margin-top: 12px;
+        color: #7B423E;
+        font-size: 16px;
+        overflow-wrap: anywhere;
+      }
+      #warning { position: fixed; z-index: 3; top: max(12px, var(--vo-safe-top, env(safe-area-inset-top, 0px))); left: 12px; right: 12px; text-align: center; }
+      #warning div {
+        margin: 4px auto;
+        max-width: 620px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #EDE0BD;
+        color: #501713;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="unity-canvas" data-fit-surface tabindex="-1"></canvas>
+    <div id="loading" role="status" aria-live="polite">
+      <strong id="loading-title"></strong>
+      <div id="track"><div id="progress"></div></div>
+    </div>
+    <div id="warning"></div>
+    <script>
+      const canvas = document.querySelector("#unity-canvas");
+      const loading = document.querySelector("#loading");
+      const progress = document.querySelector("#progress");
+      const warning = document.querySelector("#warning");
+      const buildUrl = "Build";
+      const loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+      const config = {
+        arguments: [],
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_WASM
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+#endif
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+        productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+        productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+        // The primary canvas must never be composited below device resolution.
+        // Games that want a low-resolution look render the world into their own
+        // smaller target; the final canvas and UI remain native-resolution.
+        devicePixelRatio: window.devicePixelRatio || 1,
+        showBanner(message, type) {
+          const item = document.createElement("div");
+          item.textContent = message;
+          warning.appendChild(item);
+          if (type !== "error") setTimeout(() => item.remove(), 5000);
+        },
+      };
+
+      document.querySelector("#loading-title").textContent = config.productName;
+      document.addEventListener("contextmenu", (event) => event.preventDefault());
+      document.addEventListener("gesturestart", (event) => event.preventDefault(), { passive: false });
+      document.addEventListener("gesturechange", (event) => event.preventDefault(), { passive: false });
+      document.addEventListener("gestureend", (event) => event.preventDefault(), { passive: false });
+      document.addEventListener("wheel", (event) => {
+        if (event.ctrlKey || event.metaKey) event.preventDefault();
+      }, { passive: false });
+      canvas.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
+      canvas.addEventListener("pointerdown", () => canvas.focus(), { passive: true });
+      let displayedProgress = 0;
+      let loadHidden = false;
+      const paintProgress = (value) => {
+        const clamped = Math.min(1, Math.max(0, value));
+        if (clamped <= displayedProgress) return;
+        displayedProgress = clamped;
+        progress.style.transform = `scaleX(${displayedProgress})`;
+      };
+      const hideLoading = () => {
+        if (loadHidden) return;
+        loadHidden = true;
+        setTimeout(() => {
+          loading.hidden = true;
+          canvas.focus();
+        }, 120);
+      };
+      const revealGame = () => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            progress.style.transition = "transform 180ms ease-out";
+            progress.addEventListener("transitionend", hideLoading, { once: true });
+            paintProgress(1);
+            setTimeout(hideLoading, 500);
+          });
+        });
+      };
+      const script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, paintProgress).then(revealGame).catch((error) => {
+          loading.dataset.failed = "";
+          loading.innerHTML = `<strong>The game would not start<small>${String(error)}</small></strong>`;
+        });
+      };
+      script.onerror = () => {
+        loading.dataset.failed = "";
+        loading.innerHTML = "<strong>The game could not be loaded</strong>";
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>

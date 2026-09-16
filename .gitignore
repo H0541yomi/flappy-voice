@@ -118,3 +118,12 @@ InitTestScene*.unity*
 
 # Unity Web build leftovers in the project root
 /Data/
+
+# The shipping Web player, and the staging directory it is built through first.
+# `dist` is the parent catalog's publishDir; it is generated, never committed.
+/Build/
+/dist/
+/node_modules/
+
+# Python bytecode from the Tools scripts
+__pycache__/

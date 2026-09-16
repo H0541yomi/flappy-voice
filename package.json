@@ -1,0 +1,10 @@
+{
+  "name": "flappy-voice",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Flappy Song, a Unity game controlled by singing pitch.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

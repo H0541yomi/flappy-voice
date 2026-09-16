@@ -65,6 +65,13 @@ namespace FlappyVoice.UI
 
         public bool IsShowing => root != null && root.activeSelf;
 
+        /// <summary>
+        /// Whether both asks have been answered. Separate from <see cref="IsShowing"/> because a
+        /// panel that is off screen has not necessarily been through: anything that must not
+        /// interrupt the flow wants this, not the absence of a parchment.
+        /// </summary>
+        public bool IsComplete => Current == Step.Done;
+
         // Restarts the flow at the microphone. Called by nothing at present - the authored scene
         // already opens on this step - but a player who declined and changed their mind needs a
         // way back in.
