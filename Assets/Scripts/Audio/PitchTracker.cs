@@ -15,7 +15,7 @@ namespace FlappyVoice.Audio
         [SerializeField] private float _detectorMinHz = 70f;
         [SerializeField] private float _detectorMaxHz = 1200f;
 
-        // ~4 frames at 60fps (~67ms): rides out a consonant or breath without paying the 80ms
+        // ~4 frames at 60fps (~67ms): rides out a consonant or breath without paying the
         // re-sustain, and without restarting the attract-mode anchor capture window.
         [SerializeField] private int _dropoutHoldFrames = 4;
 

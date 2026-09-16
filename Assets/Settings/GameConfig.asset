@@ -60,10 +60,11 @@ MonoBehaviour:
   _recenterWindowSec: 4
   _recenterDriftRatePerSec: 0.35
   _recenterEdgeThreshold: 0.15
-  _amplitudeGateRms: 0.03
+  _amplitudeGateRms: 0.001
   _pitchBufferSize: 2048
-  _sustainMs: 80
+  _sustainMs: 150
   _yinThreshold: 0.15
+  _pitchSmoothTimeSec: 0.06
   _heightSmoothTimeSec: 0.06
   _maxVerticalSpeed: 9
   _useCameraBackground: 1

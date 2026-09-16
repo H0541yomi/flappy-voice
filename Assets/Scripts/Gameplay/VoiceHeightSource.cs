@@ -9,6 +9,11 @@ namespace FlappyVoice.Gameplay
     {
         private const float FallbackHandoffHeight = 0.5f;
 
+        // Wider than any vibrato, narrower than the smallest deliberate move. It matches
+        // PitchTracker's own NoteChangeToleranceSemitones on purpose: a jump the tracker made
+        // the singer hold SustainMs to prove is a new note, and a new note must not be eased into.
+        private const float PitchSnapSemitones = 1f;
+
         [SerializeField] private AttractPilot _attractPilot;
 
         private readonly OctaveAnchor _anchor = new OctaveAnchor();
@@ -16,6 +21,8 @@ namespace FlappyVoice.Gameplay
         private GameConfig _config;
         private PitchTracker _tracker;
         private float _height = 0.5f;
+        private float _smoothedMidi = -1f;
+        private float _midiSmoothVelocity;
 
         // Raised the moment the range is anchored (or re-anchored). Pipe note letters are derived
         // from the floor, so anything already on screen has to be relabelled when the floor moves.
@@ -59,6 +66,7 @@ namespace FlappyVoice.Gameplay
             _anchor.Reset();
             _height = FallbackHandoffHeight;
             CurrentMidi = -1f;
+            _smoothedMidi = -1f;
             IsActive = false;
 
             if (_attractPilot != null)
@@ -75,6 +83,7 @@ namespace FlappyVoice.Gameplay
             {
                 IsActive = false;
                 CurrentMidi = -1f;
+                _smoothedMidi = -1f;
                 return;
             }
 
@@ -83,11 +92,12 @@ namespace FlappyVoice.Gameplay
             {
                 IsActive = false;
                 CurrentMidi = -1f;
+                _smoothedMidi = -1f;
                 return;
             }
 
             float deltaTime = Time.deltaTime;
-            float midi = PitchMath.HzToMidi(sample.FrequencyHz);
+            float midi = SmoothMidi(PitchMath.HzToMidi(sample.FrequencyHz), deltaTime);
             CurrentMidi = midi;
 
             if (!_anchor.IsAnchored)
@@ -111,6 +121,26 @@ namespace FlappyVoice.Gameplay
 
             _height = PitchMath.ClampToOctaveHeight(midi, _anchor.FloorMidi, _config.OctaveWidthSemitones);
             IsActive = true;
+        }
+
+        /// <summary>
+        /// Steadies what the dial and the bird are shown, because a singer holding one note still
+        /// measures as a shimmer of pitches and the screen reads that as a shake rather than as a
+        /// held note. Eases towards the measured pitch, and hands back moves wider than vibrato
+        /// untouched so changing note is as immediate as it ever was.
+        /// </summary>
+        private float SmoothMidi(float midi, float deltaTime)
+        {
+            if (_smoothedMidi < 0f || Mathf.Abs(midi - _smoothedMidi) > PitchSnapSemitones)
+            {
+                _midiSmoothVelocity = 0f;
+                _smoothedMidi = midi;
+                return midi;
+            }
+
+            _smoothedMidi = Mathf.SmoothDamp(_smoothedMidi, midi, ref _midiSmoothVelocity,
+                _config.PitchSmoothTimeSec, Mathf.Infinity, deltaTime);
+            return _smoothedMidi;
         }
 
         // No pipe on screen to aim at - the very first frames of a run, or a run that starts before

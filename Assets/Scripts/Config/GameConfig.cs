@@ -61,10 +61,15 @@ namespace FlappyVoice.Config
         [SerializeField] private float _recenterEdgeThreshold = 0.15f;
 
         [Header("Mic / detection")]
-        [SerializeField] private float _amplitudeGateRms = 0.03f;
+        [SerializeField] private float _amplitudeGateRms = 0.001f;
         [SerializeField] private int _pitchBufferSize = 2048;
-        [SerializeField] private float _sustainMs = 80f;
+        [SerializeField] private float _sustainMs = 150f;
         [SerializeField] private float _yinThreshold = 0.15f;
+
+        // A held note is never one frequency: vibrato and the detector's own frame-to-frame
+        // noise both land here, and the singer hears one steady note while the screen shakes.
+        // This is the ease that hides that, NOT a semitone snap - see VoiceHeightSource.
+        [SerializeField] private float _pitchSmoothTimeSec = 0.06f;
 
         [Header("Movement")]
         [SerializeField] private float _heightSmoothTimeSec = 0.06f;
@@ -111,6 +116,7 @@ namespace FlappyVoice.Config
         public int PitchBufferSize => _pitchBufferSize;
         public float SustainMs => _sustainMs;
         public float YinThreshold => _yinThreshold;
+        public float PitchSmoothTimeSec => _pitchSmoothTimeSec;
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
@@ -193,10 +199,11 @@ namespace FlappyVoice.Config
             c._recenterDriftRatePerSec = 0.35f;
             c._recenterEdgeThreshold = 0.15f;
 
-            c._amplitudeGateRms = 0.03f;
+            c._amplitudeGateRms = 0.001f;
             c._pitchBufferSize = 2048;
-            c._sustainMs = 80f;
+            c._sustainMs = 150f;
             c._yinThreshold = 0.15f;
+            c._pitchSmoothTimeSec = 0.06f;
 
             c._heightSmoothTimeSec = 0.06f;
             c._maxVerticalSpeed = 9f;
