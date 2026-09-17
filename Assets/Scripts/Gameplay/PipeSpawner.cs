@@ -219,7 +219,12 @@ namespace FlappyVoice.Gameplay
 
             pipe.transform.position = new Vector3(SpawnX(), 0f, 0f);
             pipe.gameObject.SetActive(true);
-            pipe.Setup(gapCenterY, CurrentGapSize, _config.PlayfieldMinY, _config.PlayfieldMaxY);
+            // Covered to the screen edge, not to the playfield bound: the playfield ends below
+            // the tuner strip, so a section drawn only to it leaves its flat end floating in the
+            // sky. Same reason SpawnX works off the frustum rather than off authored offsets.
+            pipe.Setup(gapCenterY, CurrentGapSize,
+                Mathf.Min(_config.PlayfieldMinY, ViewCenterY() - ViewHalfHeight()),
+                Mathf.Max(_config.PlayfieldMaxY, ViewCenterY() + ViewHalfHeight()));
             pipe.SetNoteOffset(noteOffset);
             pipe.SetNoteLabel(NoteNameForOffset(noteOffset));
 
@@ -266,6 +271,21 @@ namespace FlappyVoice.Gameplay
         private float ViewCenterX()
         {
             return _viewCamera != null ? _viewCamera.transform.position.x : 0f;
+        }
+
+        private float ViewCenterY()
+        {
+            return _viewCamera != null ? _viewCamera.transform.position.y : 0f;
+        }
+
+        private float ViewHalfHeight()
+        {
+            if (_viewCamera == null || !_viewCamera.orthographic)
+            {
+                return Mathf.Max(Mathf.Abs(_config.PlayfieldMinY), Mathf.Abs(_config.PlayfieldMaxY));
+            }
+
+            return _viewCamera.orthographicSize;
         }
 
         private float ViewHalfWidth()

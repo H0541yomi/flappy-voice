@@ -68,7 +68,10 @@ namespace FlappyVoice.Gameplay
             Build();
         }
 
-        public void Setup(float gapCenterY, float gapSize, float playfieldMinY, float playfieldMaxY)
+        // The two bounds are what the sections have to COVER, which is the screen rather than the
+        // playfield: the playfield ends below the tuner strip, and a section that stops there ends
+        // in mid-air. The caller works them out; here they are just the extent to stretch to.
+        public void Setup(float gapCenterY, float gapSize, float coveredMinY, float coveredMaxY)
         {
             Build();
 
@@ -82,8 +85,8 @@ namespace FlappyVoice.Gameplay
             transform.position = root;
 
             float halfGap = GapSize * 0.5f;
-            float topEdge = playfieldMaxY + BoundsOvershoot;
-            float bottomEdge = playfieldMinY - BoundsOvershoot;
+            float topEdge = coveredMaxY + BoundsOvershoot;
+            float bottomEdge = coveredMinY - BoundsOvershoot;
 
             float topStart = gapCenterY + halfGap;
             float topHeight = Mathf.Max(0.05f, topEdge - topStart);

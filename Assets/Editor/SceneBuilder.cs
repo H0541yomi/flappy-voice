@@ -122,7 +122,9 @@ namespace FlappyVoice.Editor
         // width it covered the whole top of the screen and the bird disappeared behind it
         // whenever it flew high. These three drive both the strip and the camera - BuildCamera
         // reads TunerScreenFraction to keep the playfield underneath.
-        private const float TunerTopMarginPx = 20f;
+        // Half the pill's own height of extra drop: at 20 px the strip sat under a phone's notch
+        // and the browser's top safe-area inset, which is not a margin we can read from in here.
+        private const float TunerTopMarginPx = 20f + (TunerBarHeightPx / 2f);
         private const float TunerBarWidthPx = 600f;
         private const float TunerDialBottomPadPx = 44f;
 
