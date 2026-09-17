@@ -10,6 +10,12 @@ namespace FlappyVoice.UI
     // UI - nothing here calls getUserMedia. GameBootstrap owns that, and the two answered events
     // below are the hook it (or anything else) subscribes to in order to ask for real.
     //
+    // They are no longer one sitting. The microphone step ends the flow, and the camera step is
+    // opened again by GameBootstrap once the player has finished a round: a player who has not
+    // played yet has no reason to want their face behind the pipes, and two prompts before the
+    // first note is the pair of dialogs everybody dismisses. Which is why the camera step has a
+    // door of its own, ShowCameraStep, rather than being reached by finishing the microphone one.
+    //
     // A panel of our own in front of the OS prompt is not politeness. Every browser but desktop
     // Chrome only runs getUserMedia inside a user gesture, and this game reads no input at all,
     // so without a button to press there is no gesture to spend.
@@ -66,18 +72,23 @@ namespace FlappyVoice.UI
         public bool IsShowing => root != null && root.activeSelf;
 
         /// <summary>
-        /// Whether both asks have been answered. Separate from <see cref="IsShowing"/> because a
-        /// panel that is off screen has not necessarily been through: anything that must not
-        /// interrupt the flow wants this, not the absence of a parchment.
+        /// Whether the ask that is up has been answered. Separate from <see cref="IsShowing"/>
+        /// because a panel that is off screen has not necessarily been through: anything that must
+        /// not interrupt the flow wants this, not the absence of a parchment. Goes false again
+        /// when <see cref="ShowCameraStep"/> reopens the panel a round later.
         /// </summary>
         public bool IsComplete => Current == Step.Done;
 
-        // Restarts the flow at the microphone. Called by nothing at present - the authored scene
-        // already opens on this step - but a player who declined and changed their mind needs a
-        // way back in.
-        public void Show()
+        /// <summary>
+        /// Puts the camera ask up on its own, which is how it is asked at all: the microphone step
+        /// closes the flow, and this is what reopens it a round later.
+        /// </summary>
+        // The dim swallows taps but not singing, and by the time this is called the microphone is
+        // live - so the caller owes it a GameStateManager.SetRunStartHeld, or the player's next
+        // note starts a round behind the parchment.
+        public void ShowCameraStep()
         {
-            GoTo(Step.Microphone);
+            GoTo(Step.Camera);
         }
 
         public void Hide()
@@ -158,9 +169,11 @@ namespace FlappyVoice.UI
             Answer(OnCameraRequest, Step.Done);
         }
 
+        // Straight to Done: the camera is asked for after the player's first round, not on the
+        // back of this tap.
         private void RequestMicrophonePermission()
         {
-            Answer(OnMicrophoneRequest, Step.Camera);
+            Answer(OnMicrophoneRequest, Step.Done);
         }
 
         private void OnCameraDeclined()

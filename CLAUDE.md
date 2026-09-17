@@ -150,13 +150,23 @@ System assets live in `Library/PackageCache`, not in `Assets`.
 - **`ShareService` captures by world rect, not by hierarchy.** Anything on the UI layer inside
   `scoreCardRoot` lands in the shared image, children or not — which is why the end screen's
   buttons sit below a capture rect that stops short of them.
-- **Share is browser APIs, not the host bridge.** The Variant bridge carries `quit` and
-  `orientation` and nothing else, so there is no share action to post: `WebNativeShare` goes
-  straight at `navigator.share`, falling back to `navigator.clipboard.writeText`, which is the only
-  reason the end screen has a **"Link copied"** state to show. Both APIs need transient user
-  activation and Unity dispatches a UI click from its own animation frame rather than from inside
-  the DOM handler, so the call lands a frame after the tap — inside Chrome's activation window, and
-  at the mercy of stricter browsers. A refusal comes back as `failed`, the button says so, and the
+- **Share is the host first, then browser APIs.** `FlappyVoiceShare.jslib` posts
+  `{schema_version: 1, action: "share", title, text, url}` to `VariantOriginalsHost`, and only
+  falls through to `navigator.share` and then `navigator.clipboard.writeText` when no host is
+  there — the order the parent's canonical `VariantOriginalsShare` uses. The host goes first
+  because both browser APIs need transient user activation and Unity dispatches a UI click from
+  its own animation frame rather than from inside the DOM handler, so the call lands a frame after
+  the tap — inside Chrome's activation window, and at the mercy of stricter browsers. A native
+  sheet raised by the host has neither problem. **Whether the shipped app handles `share` is
+  unconfirmed** (issue #1): the parent's Unity bridge sends it, the parent's JS host package
+  exports only `quit` and `orientation`, and neither settles it — if the app ignores it, the
+  message is swallowed and the button reports a sheet that never opened. The host is tested
+  explicitly rather than posted through `VariantOriginalsHost?.postMessage?.()`, because the
+  fallbacks turn on whether the post happened and optional chaining on an absent host carries on
+  silently. It sends nothing back, so that path reports `shared` without knowing — the one outcome
+  `EndScreenUI.ApplyShareResult` says nothing about, which is right when the sheet belongs to
+  someone else. Off the host the clipboard fallback is the only reason the end screen has a
+  **"Link copied"** state to show. A refusal comes back as `failed`, the button says so, and the
   jslib logs the link, because that is the only copy left. Dismissing the sheet is `cancelled` and
   deliberately says nothing.
   **`WantsScoreCard` is false on Web.** The browser share takes title, text and a URL; the captured
@@ -177,6 +187,22 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   button there is no tap to spend.
   While it is up it holds `HudUI.SetStartScreenSuppressed`, so the start sign does not stack
   behind it.
+- **The two steps are two sittings, and the camera's is after Play Again.** Boot shows the
+  microphone step only; it goes straight to `Step.Done`, and `GameBootstrap.OnGameStateChanged`
+  reopens the panel through `ConsentFlowUI.ShowCameraStep` on the **first** return to `Attract`
+  that follows a `GameOver` — after Play Again, before the sing-to-start sign. A player who has
+  not played has no reason to want their face behind the pipes; one ask is all a site-level
+  refusal leaves room for; and it is not raised on the `GameOver` itself because the end screen
+  already has that screen. Ask only when there is something to ask for: the handler returns early
+  without `webCamBackground` or with `GameConfig.UseCameraBackground` off, or the player would
+  answer for a background that was never going to be drawn.
+  **A panel cannot stop a run — `GameStateManager.SetRunStartHeld` can.** A run starts on a sung
+  note (`PlayerController.FixedUpdate`, off `VoiceHeightSource.IsAnchored`), and by this point the
+  microphone is live, so the consent dim swallows taps and nothing else: without the hold the next
+  note — including one the player is already holding — starts a round behind the parchment. The
+  guard lives in `StartRun` rather than in the caller, because that note is read every physics
+  step and there is exactly one way in. `GameBootstrap` releases it from `OnCompleted`, which both
+  answers raise, and `RunStartHoldTests` pins both ends.
 - **One consent panel, not two — and one button per answer.** Both steps are the same parchment,
   so the step changes only the words and which buttons are active. The three buttons are
   `microphoneAcceptButton` ("OK"), `cameraDeclineButton` ("NO") and `cameraAcceptButton` ("YES!"),
@@ -237,6 +263,15 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   `Assets/Plugins/WebGL/FlappyVoiceHost.jslib`; there is nothing to close from inside the game,
   because Variant owns the frame. `RequestQuit` logs the exact payload before posting, and logs
   it off the web too, so a tap in the Editor is visible proof the button reaches the bridge.
+  Two things happen around that post, both copied from the parent's `VariantBridge.jslib` and
+  both easy to drop again. **The visit runtime gets a checkpoint first** —
+  `globalThis.__variantOriginalsVisit?.quit()`, injected by the publisher on the CDN hosts only,
+  flushes the foreground time played since its last 30 s tick; quitting takes the page down and a
+  host teardown need not fire `pagehide`, so without that call the tail of every session goes
+  unrecorded. **With no host it falls back to `history.back()`**, because the same build runs in a
+  plain browser tab for testing and an X that does nothing on every tap reads as broken. That
+  fallback is why `__variantOriginalsQuitRequested` guards the whole function: a second post is
+  harmless, a second `back()` walks two pages out of the game.
   Two clearances are load-bearing and neither has much slack:
   the tuner pill (600 px, centred) leaves ~38 px at 9:19.5, the tightest aspect a phone ships,
   and the end screen's capture rect stops 53 px below the button, which is the only reason the

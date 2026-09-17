@@ -66,6 +66,8 @@ namespace FlappyVoice.Gameplay
 
         private bool microphoneRoutineRunning;
         private bool microphoneNoticeShown;
+        private bool cameraAsked;
+        private bool roundFinished;
 
         private void Awake()
         {
@@ -74,6 +76,7 @@ namespace FlappyVoice.Gameplay
             if (stateManager != null)
             {
                 stateManager.Configure(config);
+                stateManager.OnStateChanged += OnGameStateChanged;
             }
 
             if (pitchTracker != null)
@@ -178,6 +181,51 @@ namespace FlappyVoice.Gameplay
                 consentFlow.Configure(hud);
                 consentFlow.OnMicrophoneRequest += RequestMicrophone;
                 consentFlow.OnCameraRequest += RequestCamera;
+                consentFlow.OnCompleted += ReleaseRunStart;
+            }
+        }
+
+        // The camera ask, a round late. It is decoration, so asking before the player has played
+        // spends a prompt on someone with no reason to say yes. It goes up on the way back to
+        // Attract - after Play Again, before the sing-to-start sign - so the parchment the player
+        // just dismissed is not replaced by another one on the same screen.
+        //
+        // Once. A browser refusal sticks for the site, so a second ask would be a parchment that
+        // cannot change anything - and an accepted camera is already running.
+        private void OnGameStateChanged(GameState state)
+        {
+            if (state == GameState.GameOver)
+            {
+                roundFinished = true;
+                return;
+            }
+            if (state != GameState.Attract || !roundFinished || cameraAsked || consentFlow == null)
+            {
+                return;
+            }
+            // Nothing to ask for if the feed is switched off or absent: StartCameraRoutine would
+            // walk straight back out, and the player would have answered a question about a
+            // background that was never going to be drawn.
+            if (webCamBackground == null || (config != null && !config.UseCameraBackground))
+            {
+                return;
+            }
+
+            cameraAsked = true;
+            // A run starts on a sung note, and by now the microphone is live, so the panel's dim
+            // is no defence: without this the next note the player makes - including one they are
+            // already holding - would start a round behind the parchment.
+            stateManager.SetRunStartHeld(true);
+            consentFlow.ShowCameraStep();
+        }
+
+        // Both answers land here - OnCompleted is raised by the grant and the refusal alike - and
+        // so does the microphone step's own Done at boot, where no run is being held anyway.
+        private void ReleaseRunStart()
+        {
+            if (stateManager != null)
+            {
+                stateManager.SetRunStartHeld(false);
             }
         }
 
@@ -191,6 +239,12 @@ namespace FlappyVoice.Gameplay
             {
                 consentFlow.OnMicrophoneRequest -= RequestMicrophone;
                 consentFlow.OnCameraRequest -= RequestCamera;
+                consentFlow.OnCompleted -= ReleaseRunStart;
+            }
+
+            if (stateManager != null)
+            {
+                stateManager.OnStateChanged -= OnGameStateChanged;
             }
 
             if (microphoneNotice != null)

@@ -6,8 +6,9 @@ namespace FlappyVoice.Platform
 {
     /// <summary>
     /// The share backend for the Web build. Thin wrapper over
-    /// Assets/Plugins/WebGL/FlappyVoiceShare.jslib, which raises the OS share sheet where
-    /// `navigator.share` exists and copies the link to the clipboard where it does not.
+    /// Assets/Plugins/WebGL/FlappyVoiceShare.jslib, which asks the Variant host to raise its own
+    /// sheet, and off the host raises the browser's where `navigator.share` exists and copies the
+    /// link to the clipboard where it does not.
     /// </summary>
     public sealed class WebNativeShare : INativeShare
     {

@@ -13,6 +13,12 @@ namespace FlappyVoice.Gameplay
         public GameConfig Config => _config;
         public float RunElapsedSec { get; private set; }
 
+        /// <summary>
+        /// Whether a run is currently refused. Held while a panel owns the screen during Attract:
+        /// the start of a run is a sung note, not a tap, so a blocking dim cannot stop one.
+        /// </summary>
+        public bool RunStartHeld { get; private set; }
+
         public event System.Action<GameState> OnStateChanged;
 
         public void Configure(GameConfig config)
@@ -58,9 +64,19 @@ namespace FlappyVoice.Gameplay
             }
         }
 
+        /// <summary>
+        /// Refuses or allows StartRun. The hold lives here rather than in the caller because the
+        /// note that starts a run is read every physics step by PlayerController, so anything that
+        /// must not be interrupted has one place to say so and no caller to keep in step.
+        /// </summary>
+        public void SetRunStartHeld(bool held)
+        {
+            RunStartHeld = held;
+        }
+
         public void StartRun()
         {
-            if (State != GameState.Attract)
+            if (State != GameState.Attract || RunStartHeld)
             {
                 return;
             }

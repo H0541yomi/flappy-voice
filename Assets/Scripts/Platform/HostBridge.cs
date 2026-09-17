@@ -30,7 +30,8 @@ namespace FlappyVoice.Platform
         /// <summary>
         /// Asks the host to close the game. Fire-and-forget: the host decides what happens next
         /// and there is no reply to wait for, so callers must not expect this to have torn
-        /// anything down by the time it returns. A no-op wherever there is no host.
+        /// anything down by the time it returns. Never a no-op: with no host - a plain browser
+        /// tab - the jslib goes back in history instead, so the button is not dead while testing.
         /// </summary>
         public static void RequestQuit()
         {
