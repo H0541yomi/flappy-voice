@@ -39,6 +39,13 @@ namespace FlappyVoice.Video
 
         public bool IsRunning => webCamTexture != null && webCamTexture.isPlaying;
 
+        /// <summary>
+        /// Whether the camera has been granted this session. Distinct from
+        /// <see cref="IsRunning"/>: a feed switched off still has its grant, so turning it back
+        /// on costs nothing, where a feed that never had one has to ask.
+        /// </summary>
+        public bool HasGrant => hasGrant;
+
         // A missing config means the camera stays on, the same way every other fallback here
         // keeps the shipped behaviour rather than the dev one.
         private bool CameraBackgroundEnabled => config == null || config.UseCameraBackground;

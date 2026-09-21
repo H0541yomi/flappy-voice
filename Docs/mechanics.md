@@ -214,7 +214,7 @@ the edge of the green. Consequences that fall out of this and are intentional:
 | Transition | Trigger | Effects |
 |---|---|---|
 | Attract → Playing | anchor captured | `PipeSpawner` clears pipes on the bird; lives restored; score SFX armed |
-| Playing → GameOver | pipe hit with **no lives left** | best score committed |
+| Playing → GameOver | pipe hit with **no lives left** | best score committed to `LocalStore` |
 | GameOver → Attract | Play Again | anchor reset, spawner reset, bird re-centred |
 
 Scoring is a trigger box at the gap centre (`Pipe.ScoreZone`), so a point — and its sound — lands as
@@ -335,11 +335,26 @@ static or kinematic colliders and nothing ever kills the player.
 ## Pitch detection
 
 YIN (`YinPitchDetector`, `PitchBufferSize 2048`, `YinThreshold 0.15`) over the newest mic samples,
-gated at `AmplitudeGateRms 0.03`. Detection runs 70–1200 Hz — wider than the anchor's 55–700 Hz
+gated at `AmplitudeGateRms 0.001`. Detection runs 70–1200 Hz — wider than the anchor's 55–700 Hz
 sanity clamp on purpose, since clamping *detection* at 700 Hz makes anything above ~F5 read as
 unvoiced and freezes the bird mid-song.
 
 `PitchTracker` tracks continuously within one semitone of the accepted pitch, but a jump larger than
-that must be sustained for `SustainMs 80` before it is accepted, and up to 4 unvoiced frames are held
-through consonants and breaths. So a deliberate leap lands ~80 ms late. That is hysteresis against
+that must be sustained for `SustainMs 150` before it is accepted, and up to 4 unvoiced frames are held
+through consonants and breaths. So a deliberate leap lands ~150 ms late. That is hysteresis against
 warble, **not** note quantisation — it never changes which pitch maps to which height.
+
+### The gate is the sensitivity knob, and the player owns it
+
+The whole of "how loud do I have to sing" is one number: a frame whose RMS is under
+`AmplitudeGateRms` is called silence and never reaches YIN at all. Nothing else in the chain is a
+loudness threshold — `YinThreshold` is a periodicity threshold (how tonal, not how loud) and
+`SustainMs` is a timer. So the pause menu's slider drives that gate and nothing else.
+
+`PitchTracker.GateRmsForSensitivity` maps the slider 0..1 onto
+`LeastSensitiveGateRms 0.02` → `MostSensitiveGateRms 0.0002` **geometrically**, because loudness
+is: a linear sweep would spend most of its travel on gates no voice ever trips.
+`DefaultSensitivity01 0.65` is where the authored `0.001` falls on that scale, so an untouched
+slider reproduces the shipped tuning exactly — `MicSensitivityTests` pins both ends and that
+default. A shipped constant cannot know the room, which is the reason the knob exists rather
+than a better number.

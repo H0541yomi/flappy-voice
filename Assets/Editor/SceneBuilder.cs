@@ -171,11 +171,17 @@ namespace FlappyVoice.Editor
 
         // Ink on parchment. White text is invisible on the sign, so nothing placed on one may keep
         // the default NewText colour.
-        // #501713, the ink the signs are drawn in, and a lifted version of it for the quiet lines.
-        // One palette for the whole app: the only text that is NOT ink is the in-run score, which
-        // floats over the playfield rather than sitting on parchment and stays white.
-        private static readonly Color InkColor = new Color(0.314f, 0.090f, 0.075f, 1f);
-        private static readonly Color MutedInkColor = new Color(0.484f, 0.259f, 0.243f, 1f);
+        // #5A3A1C, the brown the signs are drawn in, and a lifted version of it for the quiet
+        // lines. One palette for the whole app: the only text that is NOT ink is the in-run
+        // score, which floats over the playfield rather than sitting on parchment and stays white.
+        //
+        // Warmer than the #501713 it replaces, which had enough red in it to read as near-black
+        // maroon against the parchment rather than as the wood and ink the rest of the art is.
+        // #5A3A1C still clears 7:1 on the #EDE0BD face, so it is a hue change, not a fade.
+        private static readonly Color InkColor = new Color(0.353f, 0.227f, 0.110f, 1f);
+        // The ink lifted a quarter of the way toward the parchment, which is where the old muted
+        // value sat relative to the old ink - so the two lines keep the same relationship.
+        private static readonly Color MutedInkColor = new Color(0.491f, 0.384f, 0.261f, 1f);
 
         // #FBD97B. Ink on dark timber would be unreadable, so a plaque label is gold instead.
         private static readonly Color ButtonLabelColor = new Color(0.984f, 0.851f, 0.482f, 1f);
@@ -214,6 +220,129 @@ namespace FlappyVoice.Editor
         // appear to jump when one replaces the other.
         private const float MicNoticeMessageCenterFromTop = 0.432f * (820f * SmallSignAspect);
         private static readonly Vector2 MicNoticeMessageSize = new Vector2(620f, 330f);
+
+        // The pause sign. The tall parchment, not the squat one: five rows - the title, the
+        // score so far, the sensitivity dial, the camera plaque and the way back - do not fit
+        // inside SmallSignFaceTop..SmallSignFaceBottom. Its first three rows are the end
+        // screen's, to the pixel, because they say the same thing in the same place.
+        // Rendered cap heights, measured off a 1080x1920 shot of this panel. They are here
+        // because the spacing below is expressed in terms of them rather than in round
+        // numbers - "half the height of the word" is a rule that survives a type-size change,
+        // where a pixel offset silently stops meaning what it meant.
+        private const float PauseTitleCapHeightPx = 56f;
+        private const float PauseScoreCaptionCapHeightPx = 32f;
+
+        // Half the title's own height above where it used to sit. That puts the glyphs ~12 px
+        // ABOVE SignFaceTop, which the sign's own rule forbids for a full-width label - but the
+        // rule is about the 77%-width band, and the face is still 651 px wide there against a
+        // "PAUSED" that renders 340. The title's BOX is narrowed to 620 to keep that honest;
+        // a longer title on this row would need the height back.
+        private const float PauseTitleTopFromTop = 325f - (PauseTitleCapHeightPx * 0.5f);
+        private static readonly Vector2 PauseTitleSize = new Vector2(620f, 125f);
+        // 140 below the title, which is the gap the block was authored on: the score rows move
+        // with the title rather than away from it, because they are one block.
+        private const float PauseScoreCaptionTopFromTop = PauseTitleTopFromTop + 140f;
+        // The gap between the word and the number it labels: half the word's own height.
+        private const float PauseScoreGapPx = PauseScoreCaptionCapHeightPx * 0.5f;
+        // Both labels sit low in their own boxes - the caption's glyphs end 44 px into its box
+        // and the numeral's begin 9 px into its own - so the two BOXES have to be 35 px closer
+        // than the gap between the glyphs is meant to be. Measured, not derived: the offsets
+        // are the font's line metrics at these two sizes.
+        private const float PauseScoreGlyphInsetPx = 35f;
+        private const float PauseScoreTopFromTop =
+            PauseScoreCaptionTopFromTop + PauseScoreGapPx + PauseScoreGlyphInsetPx;
+        // The middle group - the mic label, its bar and the camera plaque - is centred in the
+        // band between the score numeral and Resume, so it reads as one block of settings
+        // between two fixed things rather than as three rows that happen to be there. This is
+        // the group's top; everything under it is derived, so moving the block or opening up
+        // one of its gaps is a one-number change.
+        private const float PauseMicCaptionTopFromTop = 695f;
+        private const float PauseMicCaptionCapHeightPx = 27f;
+        // One line of air between the label and the control it names: the caption's own cap
+        // height. Was 59 px, which read as two unrelated rows rather than a labelled control.
+        private const float PauseMicGapPx = PauseMicCaptionCapHeightPx;
+        // Measured, not derived - these are where the ink and the artwork actually start inside
+        // their rects. The caption's glyphs sit 13 px into its box, and the pill sprite carries
+        // 9 px of its own transparency inside the slider's rect at the top and bottom, which is
+        // why its drawn height is 78 and not the rect's 96.
+        private const float PauseMicCaptionGlyphInsetPx = 13f;
+        private const float PauseSliderDrawInsetYPx = 9f;
+        private const float PauseSliderDrawHeightPx = 78f;
+        private const float PauseSliderTopFromTop =
+            PauseMicCaptionTopFromTop + PauseMicCaptionGlyphInsetPx + PauseMicCaptionCapHeightPx
+            + PauseMicGapPx - PauseSliderDrawInsetYPx;
+        // Tall enough to be a groove. The pill's rim is 28 rect px on every side whatever the
+        // rect is, so a slider the height of an ordinary UI one would be two rims touching with
+        // no face left between them for the fill to run along.
+        private static readonly Vector2 PauseSliderSize = new Vector2(560f, 96f);
+        // How far inside the pill the mask sits. Two things bound it, from opposite sides.
+        //
+        // Not less, because a stencil mask is one bit: the clipped edge of the bar is a hard
+        // stair-step, and against the rim's bright bevel every step of it shows. Inset this far
+        // the step lands on the dark face instead, where yellow-on-navy hides what
+        // yellow-on-highlight advertises. It also leaves the groove visible around the bar,
+        // which is what makes it read as a bar IN something.
+        //
+        // Not more, because the mask is the pill sprite again and its 9-slice corner blocks are
+        // 28 rect px each: at an inset of 20 the rect is 56 tall, exactly the two blocks, and
+        // past that Unity squashes them and flattens the very curve the mask exists to follow.
+        private const float PauseSliderFaceInsetPx = 18f;
+        private const float PauseSliderHandleWidthPx = 30f;
+        // The bar and the needle are drawn BIGGER than the face they are masked to, on purpose:
+        // a mask you cannot see the edge of is indistinguishable from a rect that happens to
+        // fit, and the first cut - everything sized exactly to the face - read as the second.
+        // Vertically both overshoot by this, so the groove crops them top and bottom.
+        private const float PauseSliderBarScale = 1.2f;
+        private static readonly float PauseSliderBarOverhangYPx =
+            (PauseSliderSize.y - (PauseSliderFaceInsetPx * 2f)) * (PauseSliderBarScale - 1f) * 0.5f;
+        // Horizontally only the FILL overshoots. The needle is what the player drags, and a
+        // needle centred outside the mask is a needle that vanishes at one end of its travel;
+        // flush with the face, half of it is still cut at 0 and at 1, which shows the mask
+        // without losing the control.
+        private const float PauseSliderFillOverhangXPx = 18f;
+        // The two plaques are one size, because they are one column: a settings control and the
+        // way out of the screen, and a wider Resume would read as the more important of the two
+        // rather than simply the last.
+        private const float PauseActionButtonHeight = 116f;
+        private static readonly Vector2 PauseActionButtonSize =
+            new Vector2(520f, PauseActionButtonHeight);
+        // The two plaques are drawn by two sprites with different margins, so the same RECT is
+        // not the same plaque: button.png's 9-slice keeps ~21.5 rect px of transparency at each
+        // end and ~1.5 top and bottom, where button_primary.png is full-bleed. Given one size
+        // the brass one comes out 43 px wider and 3 px taller than the timber one beside it.
+        // Subtracted rather than scaled, because a 9-slice border is drawn at a constant size:
+        // the margin is the same number of pixels whatever the rect.
+        private static readonly Vector2 PauseTimberPlaqueMarginPx = new Vector2(43f, 3f);
+        private static readonly Vector2 PausePrimaryButtonSize =
+            PauseActionButtonSize - PauseTimberPlaqueMarginPx;
+        // Hung off the bar rather than authored, so the group keeps its shape when the gap
+        // above moves. The drawn height is the timber plaque's, not its rect's - see
+        // PauseTimberPlaqueMarginPx.
+        private const float PauseSliderToCameraGapPx = 43f;
+        private const float PauseCameraButtonDrawHeightPx =
+            PauseActionButtonHeight - 3f;
+        private const float PauseCameraButtonCenterFromTop =
+            PauseSliderTopFromTop + PauseSliderDrawInsetYPx + PauseSliderDrawHeightPx
+            + PauseSliderToCameraGapPx + (PauseCameraButtonDrawHeightPx * 0.5f);
+        // Measured up from the face's bottom edge exactly as the end screen's Share is, so the
+        // lowest plaque on either sign lands the same 45 px inside the deckled edge.
+        private static readonly float PauseResumeButtonCenterFromTop =
+            SignFaceBottom - 45f - (PauseActionButtonHeight * 0.5f)
+            + (PauseTimberPlaqueMarginPx.y * 0.5f);
+
+        // The pause button shares the quit button's corner and its footprint: the two are never
+        // up at once (QuitButtonUI hides during a run, which is the only time this shows), so
+        // one set of clearances covers both and the corner holds one control, not two.
+        private const float PauseButtonSizePx = QuitButtonSizePx;
+        // Two bars on a tuner pill rather than a glyph on a timber disc: there is no pause
+        // sprite in the art, and the pill is the shape the strip directly above it already is.
+        // Sized to the pill's FACE, not to its rect: the rim is 28 rect px on every side, so an
+        // 88 px button has a 32 px slot and a glyph drawn to the button runs out over the bevel.
+        private static readonly Vector2 PauseGlyphBarSize = new Vector2(9f, 30f);
+        // Centre to centre, so the gap between the bars is this less the bar's own width. Set as
+        // a pitch rather than a gap because two bars that touch are one block, which is what the
+        // first cut of this drew.
+        private const float PauseGlyphBarPitchPx = 20f;
 
         // Gap between "BEST" and the numeral beside it. The word carries 4 px of tracking, so a
         // wider gap here would read as part of that spacing rather than as a space.
@@ -292,6 +421,10 @@ namespace FlappyVoice.Editor
             LivesUI livesUI = BuildLivesUI(canvas.transform, config);
             TunerBarUI tunerBar = BuildTunerBar(canvas.transform);
             EndScreenUI endScreen = BuildEndScreen(canvas.transform, camera);
+            // Above the end screen and below the consent flow. It only ever shows during a run,
+            // when neither of those is out, so the order between them is about nothing more than
+            // keeping the two boot-time parchments topmost.
+            PauseMenuUI pauseMenu = BuildPauseMenu(canvas.transform);
             // Last, so it is the topmost thing on the canvas: it is the first screen a player
             // sees and everything else is behind it.
             ConsentFlowUI consentFlow = BuildConsentFlow(canvas.transform);
@@ -314,12 +447,13 @@ namespace FlappyVoice.Editor
             consentFlow.Configure(hud);
             microphoneNotice.Configure(hud);
             quitButton.Configure(stateManager);
+            pauseMenu.Configure(stateManager, scoreManager, quitButton, webCamBackground);
 
             UnityEngine.Object[] candidates =
             {
                 config, stateManager, scoreManager, livesManager, shareService, microphoneInput, pitchTracker, gameAudio,
                 voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, player, camera, hud, livesUI, tunerBar, endScreen,
-                consentFlow, microphoneNotice, quitButton,
+                consentFlow, microphoneNotice, quitButton, pauseMenu,
                 pipePrefab, pipePrefab != null ? pipePrefab.GetComponent<Pipe>() : null
             };
 
@@ -343,6 +477,7 @@ namespace FlappyVoice.Editor
             AutoWireByType(consentFlow, candidates);
             AutoWireByType(microphoneNotice, candidates);
             AutoWireByType(quitButton, candidates);
+            AutoWireByType(pauseMenu, candidates);
 
             foreach (UnityEngine.Object candidate in candidates)
             {
@@ -359,7 +494,7 @@ namespace FlappyVoice.Editor
             GameBootstrap bootstrap = bootstrapGo.AddComponent<GameBootstrap>();
             WireBootstrap(bootstrap, config, stateManager, scoreManager, shareService, microphoneInput,
                 pitchTracker, gameAudio, voiceHeight, attractPilot, pipeSpawner, background, webCamBackground, singingFx, livesManager, player, camera, hud,
-                livesUI, tunerBar, endScreen, consentFlow, microphoneNotice, quitButton);
+                livesUI, tunerBar, endScreen, consentFlow, microphoneNotice, quitButton, pauseMenu);
             EditorUtility.SetDirty(bootstrap);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -1406,6 +1541,192 @@ namespace FlappyVoice.Editor
             return quit;
         }
 
+        // The pause screen and the corner button that raises it. One component owns both because
+        // they are never up together - the button is what a run shows, the panel is what it
+        // shows instead once tapped - and splitting them would put that rule in two places.
+        private static PauseMenuUI BuildPauseMenu(Transform canvas)
+        {
+            GameObject root = NewUI("PauseMenu", canvas);
+            Stretch(root);
+            PauseMenuUI pauseMenu = root.AddComponent<PauseMenuUI>();
+
+            // The corner control. A child rather than the component's own object, for the same
+            // reason the quit button is: a component that switched itself off could never switch
+            // itself back on.
+            Image pauseBackground = NewImage("PauseButton", root.transform, Color.white);
+            ApplySlicedSprite(pauseBackground, TunerPillSpritePath, Color.white);
+            Place(pauseBackground.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-QuitButtonMarginPx, -QuitButtonMarginPx),
+                new Vector2(PauseButtonSizePx, PauseButtonSizePx));
+            pauseBackground.raycastTarget = true;
+            Button pauseButton = pauseBackground.gameObject.AddComponent<Button>();
+            pauseButton.targetGraphic = pauseBackground;
+
+            // Gold, because the pill is the dark face the tuner draws on and gold is the one
+            // warm light in the palette that reads against it.
+            for (int bar = 0; bar < 2; bar++)
+            {
+                Image glyph = NewImage("Bar" + bar, pauseBackground.transform, ButtonLabelColor);
+                Place(glyph.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                    new Vector2((bar == 0 ? -0.5f : 0.5f) * PauseGlyphBarPitchPx, 0f),
+                    PauseGlyphBarSize);
+            }
+
+            GameObject panel = NewUI("Panel", root.transform);
+            Stretch(panel);
+
+            Image dim = NewImage("Dim", panel.transform, new Color(0f, 0f, 0f, 0.55f));
+            Stretch(dim.gameObject);
+            // The run is frozen behind this, not ended, so a tap that misses a control must be
+            // swallowed rather than reach the playfield underneath.
+            dim.raycastTarget = true;
+
+            GameObject sign = NewUI("PauseSign", panel.transform);
+            Place(sign, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, SignSize);
+
+            Image parchment = NewImage("Parchment", sign.transform, new Color(0.93f, 0.88f, 0.74f, 1f));
+            Stretch(parchment.gameObject);
+            ApplySlicedSprite(parchment, SignSpritePath, Color.white);
+
+            TextMeshProUGUI title = NewText("Title", sign.transform, "PAUSED", 74f,
+                TextAlignmentOptions.Center);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -PauseTitleTopFromTop), PauseTitleSize);
+            ApplyTitleFace(title);
+            title.characterSpacing = 2f;
+            title.color = InkColor;
+
+            TextMeshProUGUI caption = NewText("ScoreCaption", sign.transform, "SCORE", 46f,
+                TextAlignmentOptions.Center);
+            Place(caption.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -PauseScoreCaptionTopFromTop), new Vector2(620f, 56f));
+            caption.characterSpacing = 6f;
+            caption.color = MutedInkColor;
+
+            TextMeshProUGUI score = NewText("Score", sign.transform, "0", 145f,
+                TextAlignmentOptions.Center);
+            ApplyNumberFace(score);
+            Place(score.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -PauseScoreTopFromTop), new Vector2(620f, 165f));
+            score.fontStyle = FontStyles.Bold;
+            score.color = InkColor;
+
+            TextMeshProUGUI micCaption = NewText("MicCaption", sign.transform, "MIC SENSITIVITY", 40f,
+                TextAlignmentOptions.Center);
+            Place(micCaption.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -PauseMicCaptionTopFromTop), new Vector2(620f, 52f));
+            micCaption.characterSpacing = 4f;
+            micCaption.color = MutedInkColor;
+
+            Slider sensitivity = BuildSensitivitySlider(sign.transform);
+
+            Button camera = NewButton("CameraButton", sign.transform, "CAMERA: ON",
+                FromSignTop(PauseCameraButtonCenterFromTop), PauseActionButtonSize,
+                ButtonSpritePath, 42f);
+            TextMeshProUGUI cameraLabel = camera.GetComponentInChildren<TextMeshProUGUI>();
+
+            // Brass, where the camera plaque above it is timber. The plaque rule is about
+            // telling a plaque from the one beside it, and here the pair is a setting and the
+            // way out of the screen - two timber plaques stacked would read as two settings.
+            // The brass sprite draws to its rect where the timber one holds a margin inside
+            // its own, so this rect is deliberately the smaller of the two - which is what
+            // makes the two plaques the same PLAQUE.
+            Button resume = NewButton("ResumeButton", sign.transform, "Resume",
+                FromSignTop(PauseResumeButtonCenterFromTop), PausePrimaryButtonSize,
+                ButtonPrimarySpritePath, 50f);
+            // Ink, not gold: the brass plaque is light and a gold label on it would vanish.
+            resume.GetComponentInChildren<TextMeshProUGUI>().color = InkColor;
+
+            panel.SetActive(false);
+            // Authored hidden as well. Attract is what the scene opens on and there is no run to
+            // pause; PauseMenuUI turns it on when one starts.
+            pauseBackground.gameObject.SetActive(false);
+
+            SerializedObject so = new SerializedObject(pauseMenu);
+            SetRef(so, "pauseButtonRoot", pauseBackground.gameObject);
+            SetRef(so, "pauseButton", pauseButton);
+            SetRef(so, "panelRoot", panel);
+            SetRef(so, "scoreLabel", score);
+            SetRef(so, "sensitivitySlider", sensitivity);
+            SetRef(so, "cameraButton", camera);
+            SetRef(so, "cameraLabel", cameraLabel);
+            SetRef(so, "resumeButton", resume);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return pauseMenu;
+        }
+
+        // The tuner strip's parts, reused as a dial the player drags: the pill for the track, the
+        // needle for the handle. The screen already teaches that a pill with a needle in it is a
+        // thing you read left-to-right, and this is the one control in the game that has to be
+        // understood without a number beside it.
+        private static Slider BuildSensitivitySlider(Transform parent)
+        {
+            GameObject root = NewUI("SensitivitySlider", parent);
+            Place(root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(0f, -PauseSliderTopFromTop), PauseSliderSize);
+            Slider slider = root.AddComponent<Slider>();
+
+            Image track = NewImage("Track", root.transform, new Color(0.10f, 0.12f, 0.18f, 0.94f));
+            Stretch(track.gameObject);
+            ApplySlicedSprite(track, TunerPillSpritePath, Color.white);
+            // The whole track takes taps, not just the handle: on a phone the handle is a thumb
+            // wide at most, and a dial you can only drag by its needle is a dial most players
+            // miss on the first try.
+            track.raycastTarget = true;
+
+            // The pill's face, as a mask. Everything the slider moves lives inside it, so the
+            // bar and the needle are cut to the groove rather than trusted to stop at it: the
+            // fill is driven by Slider to a fraction of its parent and the handle is re-anchored
+            // on every value change, so neither is a rect this builder gets to place.
+            //
+            // A stencil Mask over a second copy of the pill, NOT a RectMask2D. RectMask2D clips
+            // to a rectangle, so a bar run to the end of a pill with strongly rounded ends got
+            // a square corner where the groove curves away - the mask was visible as the wrong
+            // shape. Mask clips to the mask graphic's own alpha, so the cut follows the pill.
+            // The sprite is inset by the rim rather than redrawn: offsetting that curve inward
+            // by 8 px is the face's boundary to within a pixel, and it costs no new art.
+            GameObject viewport = NewUI("Viewport", root.transform);
+            Stretch(viewport, PauseSliderFaceInsetPx, PauseSliderFaceInsetPx);
+            Image viewportShape = viewport.AddComponent<Image>();
+            ApplySlicedSprite(viewportShape, TunerPillSpritePath, Color.white);
+            viewportShape.raycastTarget = false;
+            // Stencil only. The visible pill is the Track above; this copy exists to be a shape.
+            viewport.AddComponent<Mask>().showMaskGraphic = false;
+
+            GameObject fillArea = NewUI("FillArea", viewport.transform);
+            Stretch(fillArea, -PauseSliderFillOverhangXPx, -PauseSliderBarOverhangYPx);
+            // A flat gold bar, not the tuner's safe_band sprite: an Image tint MULTIPLIES, and
+            // that band is painted green, so gold over it comes out chartreuse.
+            Image fill = NewImage("Fill", fillArea.transform, ButtonLabelColor);
+            Stretch(fill.gameObject);
+
+            // Flush with the face horizontally, over it vertically: the needle is the thing
+            // being dragged, so it may be cropped but must never travel out of sight. At 0 and
+            // at 1 the mask takes half of it, which is the same cut the fill shows.
+            GameObject handleArea = NewUI("HandleArea", viewport.transform);
+            Stretch(handleArea, 0f, -PauseSliderBarOverhangYPx);
+            Image handle = NewImage("Handle", handleArea.transform, Color.white);
+            ApplySlicedSprite(handle, NeedleSpritePath, Color.white);
+            // Height 0, not a measured one: Slider re-anchors the handle to its area's full
+            // cross-axis every time the value moves, and sizeDelta is ADDED to that, so any
+            // height authored here is height the needle overhangs by.
+            Place(handle.gameObject, new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(PauseSliderHandleWidthPx, 0f));
+            handle.raycastTarget = true;
+
+            // Through the properties rather than through SerializedObject: assigning fillRect
+            // and handleRect is what makes Slider cache them and lay itself out, and a headless
+            // build never ticks a canvas to do it later.
+            slider.fillRect = (RectTransform)fill.transform;
+            slider.handleRect = (RectTransform)handle.transform;
+            slider.targetGraphic = handle;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = PitchTracker.DefaultSensitivity01;
+            return slider;
+        }
+
         private static EndScreenUI BuildEndScreen(Transform canvas, Camera camera)
         {
             GameObject root = NewUI("EndScreen", canvas);
@@ -1488,7 +1809,9 @@ namespace FlappyVoice.Editor
             TextMeshProUGUI badgeLabel = NewText("Label", badge.transform, "NEW BEST!", 40f,
                 TextAlignmentOptions.Center);
             Stretch(badgeLabel.gameObject);
-            badgeLabel.color = new Color(0.12f, 0.10f, 0.05f, 1f);
+            // Darker than InkColor because it sits on gold rather than on parchment, but the
+            // same brown: a neutral black here would be the one cold mark in the palette.
+            badgeLabel.color = new Color(0.180f, 0.113f, 0.051f, 1f);
             badge.gameObject.SetActive(false);
 
             Image deadBird = NewImage("Bird", card.transform, Color.white);
@@ -1827,7 +2150,7 @@ namespace FlappyVoice.Editor
             WebCam webCamBackground, SingingFx singingFx, LivesManager livesManager,
             PlayerController player, Camera viewCamera, HudUI hud, LivesUI livesUI, TunerBarUI tunerBar,
             EndScreenUI endScreen, ConsentFlowUI consentFlow, MicrophoneNoticeUI microphoneNotice,
-            QuitButtonUI quitButton)
+            QuitButtonUI quitButton, PauseMenuUI pauseMenu)
         {
             SerializedObject so = new SerializedObject(bootstrap);
             SetRef(so, "config", AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath));
@@ -1853,6 +2176,7 @@ namespace FlappyVoice.Editor
             SetRef(so, "consentFlow", consentFlow);
             SetRef(so, "microphoneNotice", microphoneNotice);
             SetRef(so, "quitButton", quitButton);
+            SetRef(so, "pauseMenu", pauseMenu);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 

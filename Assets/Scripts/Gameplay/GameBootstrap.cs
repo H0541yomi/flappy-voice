@@ -21,6 +21,10 @@ namespace FlappyVoice.Gameplay
         // The camera is decoration, so it gets a bounded number of tries and never a hint of its
         // own: nagging for a background would compete with the hint the microphone needs.
         private const int CameraGrantAttempts = 8;
+        // The two settings the pause menu owns, kept beside the best score in the browser's own
+        // store rather than on the config asset: they are the player's, not the build's.
+        private const string MicSensitivityKey = "flappyvoice.micsensitivity";
+        private const string CameraBackgroundKey = "flappyvoice.camerabackground";
 
         [Header("Config")]
         [SerializeField] private GameConfig config;
@@ -56,6 +60,7 @@ namespace FlappyVoice.Gameplay
         // routine rather than from the panel, because only the routine knows the grant failed.
         [SerializeField] private MicrophoneNoticeUI microphoneNotice;
         [SerializeField] private QuitButtonUI quitButton;
+        [SerializeField] private PauseMenuUI pauseMenu;
 
         [Header("Background")]
         [SerializeField] private WebCam webCamBackground;
@@ -183,6 +188,83 @@ namespace FlappyVoice.Gameplay
                 consentFlow.OnCameraRequest += RequestCamera;
                 consentFlow.OnCompleted += ReleaseRunStart;
             }
+
+            if (pauseMenu != null)
+            {
+                pauseMenu.Configure(stateManager, scoreManager, quitButton, webCamBackground);
+                pauseMenu.OnMicSensitivityChanged += ApplyMicSensitivity;
+                pauseMenu.OnCameraBackgroundChanged += ApplyCameraBackground;
+            }
+
+            RestoreStoredSettings();
+        }
+
+        // Last in Awake, because both of these land on things Awake has just configured:
+        // PitchTracker.Configure reinstates the authored gate, and the camera flag has to be on
+        // the config before OnGameStateChanged can read it to decide whether to ask at all.
+        private void RestoreStoredSettings()
+        {
+            float sensitivity = Mathf.Clamp01(
+                LocalStore.GetFloat(MicSensitivityKey, PitchTracker.DefaultSensitivity01));
+
+            if (pitchTracker != null)
+            {
+                pitchTracker.AmplitudeGateRms = PitchTracker.GateRmsForSensitivity(sensitivity);
+            }
+            if (config != null)
+            {
+                // Handed the raw preference: SetUseCameraBackground narrows only, so a stored
+                // "on" cannot reach past the dev kill switch on the asset.
+                config.SetUseCameraBackground(LocalStore.GetInt(CameraBackgroundKey, 1) != 0);
+            }
+            // The slider is the only control with a stored value to show. The camera plaque
+            // reads the live feed each time the panel opens, because a refusal is silent and a
+            // preference is not evidence of a camera.
+            if (pauseMenu != null)
+            {
+                pauseMenu.SetMicSensitivity(sensitivity);
+            }
+        }
+
+        /// <summary>
+        /// Applies and stores a new microphone sensitivity. 1 is the most sensitive; the slider
+        /// is the calibration knob for a room, which no shipped constant can know in advance.
+        /// </summary>
+        private void ApplyMicSensitivity(float sensitivity01)
+        {
+            if (pitchTracker != null)
+            {
+                pitchTracker.AmplitudeGateRms = PitchTracker.GateRmsForSensitivity(sensitivity01);
+            }
+            LocalStore.SetFloat(MicSensitivityKey, sensitivity01);
+        }
+
+        /// <summary>
+        /// Turns the selfie background on or off and remembers the answer. Turning it on may be
+        /// the first time the camera has ever been asked for, so it can spend the tap that got
+        /// here on the grant - which is why this lives beside the consent routines rather than
+        /// on the pause menu.
+        /// </summary>
+        private void ApplyCameraBackground(bool enabled)
+        {
+            // Either answer settles it, so the round-two consent parchment does not come back to
+            // ask a player who has just told us in the pause menu.
+            cameraAsked = true;
+
+            if (config != null)
+            {
+                config.SetUseCameraBackground(enabled);
+            }
+            LocalStore.SetInt(CameraBackgroundKey, enabled ? 1 : 0);
+
+            // Grant, not IsRunning: WebCam reopens a feed it already has a grant for on its own,
+            // and IsRunning is false on this frame either way because its Update has not run
+            // yet. Asking is for the player who refused the camera step, or was never offered
+            // it, and has changed their mind - the tap that got here is the gesture it needs.
+            if (enabled && webCamBackground != null && !webCamBackground.HasGrant)
+            {
+                RequestCamera();
+            }
         }
 
         // The camera ask, a round late. It is decoration, so asking before the player has played
@@ -250,6 +332,12 @@ namespace FlappyVoice.Gameplay
             if (microphoneNotice != null)
             {
                 microphoneNotice.OnRetryRequested -= RequestMicrophone;
+            }
+
+            if (pauseMenu != null)
+            {
+                pauseMenu.OnMicSensitivityChanged -= ApplyMicSensitivity;
+                pauseMenu.OnCameraBackgroundChanged -= ApplyCameraBackground;
             }
         }
 
@@ -457,6 +545,7 @@ namespace FlappyVoice.Gameplay
             Collect(ref missing, consentFlow, nameof(consentFlow));
             Collect(ref missing, microphoneNotice, nameof(microphoneNotice));
             Collect(ref missing, quitButton, nameof(quitButton));
+            Collect(ref missing, pauseMenu, nameof(pauseMenu));
 
             if (missing != null)
             {

@@ -30,7 +30,7 @@ PLAY_PILL = (440, 680, 960, 872)
 SAFE_X = (80, 1320)
 
 # Assets/Editor/SceneBuilder.cs is the source of truth for both of these.
-INK = (128, 37, 30)  # InkColor #501713
+INK = (90, 58, 28)  # InkColor #5A3A1C
 PARCHMENT = (237, 224, 189)  # the parchment the signs are drawn on
 
 TITLE = "Flappy Song"

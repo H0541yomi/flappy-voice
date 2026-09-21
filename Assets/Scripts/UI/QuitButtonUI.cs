@@ -19,6 +19,11 @@ namespace FlappyVoice.UI
     // exactly one sign out - the consent parchment, the microphone notice, or the start sign - and
     // GameOver always has the end screen, so "not Playing" IS "a panel is out", and it needs one
     // subscription instead of three.
+    //
+    // The pause screen is the one panel that breaks that equivalence: pausing is Time.timeScale,
+    // not a state, so the game is still Playing behind it. PauseMenuUI says so through
+    // SetRunPaused rather than the state doing it, which keeps the rule "the X is out whenever a
+    // panel is" true for all four panels.
     public sealed class QuitButtonUI : MonoBehaviour
     {
         [SerializeField] private GameStateManager stateManager;
@@ -26,6 +31,7 @@ namespace FlappyVoice.UI
         [SerializeField] private Button quitButton;
 
         private bool subscribed;
+        private bool runPaused;
 
         /// <summary>
         /// Replays the edit-time wiring at runtime: the state manager lives in a non-serialized
@@ -39,6 +45,16 @@ namespace FlappyVoice.UI
             {
                 Subscribe();
             }
+            ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
+        }
+
+        /// <summary>
+        /// Shows the X over a paused run. Held by PauseMenuUI for exactly as long as its panel
+        /// is up, so a pause is the one time the button is out while the state is Playing.
+        /// </summary>
+        public void SetRunPaused(bool paused)
+        {
+            runPaused = paused;
             ApplyState(stateManager != null ? stateManager.State : GameState.Attract);
         }
 
@@ -94,7 +110,7 @@ namespace FlappyVoice.UI
 
         private void ApplyState(GameState state)
         {
-            bool visible = state != GameState.Playing;
+            bool visible = state != GameState.Playing || runPaused;
             if (root != null && root.activeSelf != visible)
             {
                 root.SetActive(visible);

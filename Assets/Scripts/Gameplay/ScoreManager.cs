@@ -1,10 +1,14 @@
+using FlappyVoice.Platform;
 using UnityEngine;
 
 namespace FlappyVoice.Gameplay
 {
     public sealed class ScoreManager : MonoBehaviour
     {
-        public const string BestScoreKey = "flappyvoice.bestscore";
+        // Renamed off the old "flappyvoice.bestscore": that key was written with
+        // PlayerPrefs.SetInt, and LocalStore stores every value as a number, so an editor
+        // that still had the old entry would be read back at the wrong type.
+        public const string BestScoreKey = "flappyvoice.best";
 
         private GameStateManager _state;
         private bool _committed;
@@ -17,7 +21,7 @@ namespace FlappyVoice.Gameplay
 
         private void Awake()
         {
-            BestScore = PlayerPrefs.GetInt(BestScoreKey, 0);
+            BestScore = LocalStore.GetInt(BestScoreKey, 0);
         }
 
         public void Configure(GameStateManager state)
@@ -72,8 +76,7 @@ namespace FlappyVoice.Gameplay
                 IsNewBest = true;
             }
 
-            PlayerPrefs.SetInt(BestScoreKey, BestScore);
-            PlayerPrefs.Save();
+            LocalStore.SetInt(BestScoreKey, BestScore);
         }
 
         private void HandleStateChanged(GameState state)

@@ -21,8 +21,8 @@ palette of its own.
 
 | Constant | Hex | Used for |
 |---|---|---|
-| `InkColor` | `#501713` | Everything on parchment: titles, bodies, consent copy, the final score |
-| `MutedInkColor` | `#7B423E` | Quiet lines — `SCORE` / `BEST` captions, the start hint |
+| `InkColor` | `#5A3A1C` | Everything on parchment: titles, bodies, consent copy, the final score |
+| `MutedInkColor` | `#7D6243` | Quiet lines — `SCORE` / `BEST` captions, the start hint |
 | `ButtonLabelColor` | `#FBD97B` | Plaque labels on **timber** |
 | — | `#FFFFFF` | The in-run `ScoreLabel`, and only that |
 
@@ -31,8 +31,12 @@ Two rules that are easy to break:
 - **White is invisible on parchment.** `NewText` leaves text white, so anything placed on a sign
   must set a colour. Check a new label against the sign, not the editor's dark background.
 - **The in-run score is the one exception**, because it floats over the playfield rather than
-  sitting on a sign. The brass `YES!` plaque is light, so *its* label is ink, not gold — gold is
-  for dark timber.
+  sitting on a sign. The brass `YES!` and `Resume` plaques are light, so *their* labels are ink,
+  not gold — gold is for dark timber.
+- **The ink is brown, not black.** `#5A3A1C` replaced an earlier `#501713`, which had enough
+  red in it to read as near-black maroon on the parchment rather than as wood and ink. It still
+  clears 7:1 on the `#EDE0BD` face, so a warmer ink is not a fainter one — do not darken it back
+  toward black to "fix" contrast.
 
 ### Surfaces
 
@@ -188,7 +192,7 @@ tables above rather than inventing anything:
 | Wordmark | `#EDE0BD`, the sign face at `clamp(30px, 8vw, 52px)` | Parchment, and `sign-face.ttf` — the same TTF `FontBuilder` bakes |
 | Progress track | `rgba(10,13,23,.72)`, pill | The tuner strip backdrop |
 | Progress fill | `#5CD982` | `TunerBarUI.safeColor` — in tune |
-| Load failure, and the loader's warning banner | `#EDE0BD` card, `#501713` text, `#7B423E` detail | Parchment, `InkColor`, `MutedInkColor` |
+| Load failure, and the loader's warning banner | `#EDE0BD` card, `#5A3A1C` text, `#7D6243` detail | Parchment, `InkColor`, `MutedInkColor` |
 
 Two things this buys, both of which are the point rather than decoration: the last frame the page
 paints is the colour Unity's first frame clears to, so the handover is a wordmark going out rather

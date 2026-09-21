@@ -244,7 +244,7 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   toggles `bestScoreRow` rather than the label when the new-best badge takes that line. Any mixed
   string that needs a numeral stays wholly in the sign face. The TMP default (LiberationSans) remains only as a backstop for the sign face; the number
   face has none, so a missing asset leaves the scores in IM Fell rather than blank.
-- **One ink for the whole app.** `InkColor` is #501713, the brown the signs are drawn in, and
+- **One ink for the whole app.** `InkColor` is #5A3A1C, the brown the signs are drawn in, and
   `MutedInkColor` is a lifted version of it for quiet lines; `ButtonLabelColor` is #FBD97B,
   because ink on dark timber would be unreadable — and it is also the gold the pipe note letters
   glow in, which is the only other warm light in the palette. The **only** text that is not ink
@@ -258,7 +258,10 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   canvas's top-right corner, never on a panel — the three panels are three sizes in three places.
   It shows whenever `GameState != Playing`, which is one subscription instead of three because
   Attract always has exactly one sign out (consent, microphone notice, or start) and GameOver
-  always has the end screen. The tap calls `HostBridge.RequestQuit`, which posts
+  always has the end screen. The pause screen is the one panel that breaks that equivalence —
+  pausing is `Time.timeScale`, so the game is still `Playing` behind it — so `PauseMenuUI` holds
+  `QuitButtonUI.SetRunPaused` for exactly as long as its panel is up. The rule the button obeys
+  is still "the X is out whenever a panel is", for all four panels. The tap calls `HostBridge.RequestQuit`, which posts
   `{schema_version: 1, action: "quit"}` to `window.VariantOriginalsHost` through
   `Assets/Plugins/WebGL/FlappyVoiceHost.jslib`; there is nothing to close from inside the game,
   because Variant owns the frame. `RequestQuit` logs the exact payload before posting, and logs
@@ -277,6 +280,115 @@ System assets live in `Library/PackageCache`, not in `Assets`.
   and the end screen's capture rect stops 53 px below the button, which is the only reason the
   shared card does not have an X in its corner. `SceneBuilder` builds it **last** so it stays
   above the consent flow's blocking dim.
+- **Pausing is `Time.timeScale`, not a fourth `GameState`.** `PauseMenuUI` freezes the world and
+  puts its parchment up; the state stays `Playing` throughout. Everything that moves runs off
+  `Time.deltaTime` or `FixedUpdate`, so zero stops all of it in one line, where a `Paused` state
+  would be a new branch in `PipeSpawner`, `PlayerController`, `GameStateManager`, `QuitButtonUI`
+  and `LivesUI`. The two costs are both deliberate: uGUI still takes input at timeScale 0 (which
+  is what makes the panel usable), and `WebCam.Update` still runs (which is what makes the camera
+  toggle apply while you are looking at it). `Resume()` is called from `OnDisable` as well as the
+  button, so a scene unload can never carry a stopped clock into what loads next.
+  **The pause button shares the quit button's corner and footprint**, and the corner *swaps*
+  controls: the pause button steps aside when the panel opens and the X takes its place, through
+  `QuitButtonUI.SetRunPaused`. One set of clearances covers both, and a paused run has the same
+  way out every other panel has. It is the tuner pill with two
+  gold bars rather than a timber disc: there is no pause sprite in the art, and its glyph is
+  sized to the pill's **face** (32 px inside an 88 px rect), not to the rect, because the 9-slice
+  rim is 28 rect px whatever the button's size.
+  **The panel's two settings are raised as events, not applied.** `GameBootstrap` owns them, the
+  same way it owns the consent flow's asks: turning the camera back on may need a `getUserMedia`
+  grant, which only its routine can spend the tap on, and persisting them belongs where the rest
+  of the settings loading is. `RestoreStoredSettings` runs last in `Awake` — `PitchTracker.Configure`
+  reinstates the authored gate, and the camera flag has to be on the config before
+  `OnGameStateChanged` reads it.
+  **The camera plaque reads the feed, not a stored preference.** `PauseMenuUI` recomputes its
+  label from `WebCam.IsRunning` on every open, which is why it holds a reference to the feed at
+  all. A refusal at the consent step raises no event — the flow reports a grant and says nothing
+  about a no — so a preference defaulting to "on" is not evidence of a camera, and an earlier cut
+  said **CAMERA: ON** to every player who had declined. Between opens the toggle is optimistic: a
+  tap flips the label at once because the grant it may need is several frames away. The ask on
+  turning it on is gated on `WebCam.HasGrant`, **not** `IsRunning` — `WebCam` reopens a feed it
+  already has a grant for on its own, and `IsRunning` is false on the frame of the tap either way
+  because its `Update` has not run yet. Either answer sets `cameraAsked`, so the round-two consent
+  parchment does not come back to a player who has just answered in the pause menu.
+- **The mic sensitivity slider is the amplitude gate and nothing else.** `AmplitudeGateRms` is the
+  one loudness threshold in the chain — `YinThreshold` is a periodicity threshold and `SustainMs`
+  is a timer — so `PitchTracker.GateRmsForSensitivity` maps the slider geometrically onto
+  `LeastSensitiveGateRms 0.02` → `MostSensitiveGateRms 0.0002`, and `DefaultSensitivity01 0.65`
+  is where the authored `0.001` lands so an untouched slider ships today's tuning.
+  `MicSensitivityTests` pins all three. The knob exists because no constant can know the room:
+  the same gate that lets a soft singer in lets a noisy room fly the bird.
+  **The ends are two different microphones, not two tunings.** End to end the slider spans
+  **-10.5 to -86 dBFS** — 75.5 dB, 0.76 dB per percent, shipped tuning at -60. At the sensitive
+  end the gate is under a phone mic's own self-noise, so room tone alone flies the bird, which
+  is what makes the control recoverable: a player who cannot be heard turns it up until
+  *something* happens. At the other it takes a raised voice right at the phone. Both ends are
+  authored in dBFS and stored as the amplitude they mean, since the gate is compared to an RMS. An earlier
+  0.0002..0.02 looked wide written down (40 dB) but its quiet end was already past every real
+  room and its loud end was ordinary speech, so both extremes behaved the same in most rooms and
+  the slider read as doing nothing. The cost, stated rather than discovered: the usable band
+  around the default is now a smaller slice of the bar.
+  **The groove masks its own contents, and they overshoot it on purpose.** The bar and the needle
+  are the two things in the panel this builder does not get to place — `Slider` drives the fill to
+  a fraction of its parent and re-anchors the handle on every value change — so they live under a
+  `Viewport` with a **stencil `Mask` over a second copy of the pill sprite** — not a
+  `RectMask2D`, which clips to a rectangle and put a square corner on the bar where the groove
+  curves away, making the mask visible as the wrong shape. `Mask` clips to the graphic's own
+  alpha, so the cut follows the pill. `PauseSliderFaceInsetPx` (18) is bounded from both sides:
+  less and the stencil's one-bit stair-step lands on the rim's bright bevel where every step
+  shows, more than 20 and the rect is shorter than the sprite's own 28 px corner blocks, so
+  Unity squashes them and flattens the curve the mask exists to follow. Both are then drawn
+  `PauseSliderBarScale` (1.2×) **taller than the face they are masked to**, and the fill
+  `PauseSliderFillOverhangXPx` (18) past each end: a mask whose contents fit exactly inside it is
+  indistinguishable from a rect that happens to be the right size, which is how the first cut
+  read — a bar floating over the rim rather than running inside it. The needle overshoots
+  vertically only; centred outside the mask it would vanish at one end of its travel, where flush
+  with the face the mask takes half of it at 0 and at 1 and the control survives.
+  **The middle group is centred, not placed.** The mic label, its bar and the camera plaque sit
+  as one block of settings in the band between the score numeral and Resume — 115 px of air
+  above it and 118 below. `PauseMicCaptionTopFromTop` is the group's top and everything under it
+  hangs off that (`PauseMicGapPx`, then `PauseSliderToCameraGapPx`), so opening a gap or moving
+  the block is one number rather than three. `PauseMicGapPx` is the caption's own cap height —
+  one line of air between a label and the control it names; at the 59 px it started on the two
+  read as unrelated rows. The insets beside them are measured, not derived: the caption's glyphs
+  begin 13 px into its box, and the pill sprite carries 9 px of its own transparency inside the
+  slider's rect, which is why the bar draws 78 tall in a 96 rect.
+  **The score rows are derived too, so that block moves as a block.** `PauseScoreCaptionTopFromTop` is the
+  title `+140`, and `PauseScoreTopFromTop` is the caption plus `PauseScoreGapPx` plus
+  `PauseScoreGlyphInsetPx`. That gap is *half the cap height of the word SCORE*, which is a rule
+  that survives a type-size change where a pixel offset silently stops meaning what it meant; the
+  35 beside it is not a gap but the two labels' line metrics — the caption's glyphs end 44 px into
+  its box and the numeral's begin 9 px into its own, so the boxes sit 35 px closer than the glyphs
+  are meant to.
+  **The title is half its own height above the face band, deliberately.** `PauseTitleTopFromTop`
+  puts the glyphs ~12 px **above** `SignFaceTop`, which the sign's rule forbids — but that rule is
+  about the 77%-width band, and the face is still 651 px wide there against a "PAUSED" that
+  renders 340. `PauseTitleSize` is narrowed to 620 to keep the box honest too. A longer title on
+  this row has to give the height back.
+  **Same rect is not the same plaque.** `button.png`'s 9-slice keeps ~21.5 rect px of transparency
+  at each end and ~1.5 top and bottom; `button_primary.png` is full-bleed. Given one size the
+  brass plaque draws 43 px wider and 3 px taller than the timber one beside it, which is why
+  Resume takes `PausePrimaryButtonSize` — `PauseActionButtonSize` less
+  `PauseTimberPlaqueMarginPx` — and why its centre is nudged by half that height so both still sit
+  45 px inside the face. Subtracted rather than scaled, because a 9-slice border is drawn at a
+  constant size, so the margin is the same pixel count whatever the rect. Measured off a render;
+  redraw either sprite and it has to be measured again.
+  **The runtime camera flag is an override, not a write, and it narrows only.** `GameConfig` is a
+  ScriptableObject *asset*, so assigning `_useCameraBackground` at runtime edits the asset and in
+  the Editor a player's toggle would be saved as the shipped default. `SetUseCameraBackground`
+  sets a `[NonSerialized]` nullable that `UseCameraBackground` reads through instead, and ANDs it
+  with the authored flag — so neither a stored preference nor a pause-menu tap can turn the feed
+  back on behind the dev kill switch, and callers do not each have to remember that.
+- **Persistence is `LocalStore`, which is `localStorage` on Web.** The best score and the two
+  pause-menu settings go through it. PlayerPrefs on Web writes into an IndexedDB-backed emscripten
+  filesystem that only this build can read; `Assets/Plugins/WebGL/FlappyVoiceStore.jslib` uses the
+  browser's own store instead, and PlayerPrefs stays the backend off the web. **Numbers only, in
+  both directions** — returning a string would mean allocating into the Unity heap and handing C#
+  a pointer to free, and every value here is a number. Every access is wrapped: `localStorage`
+  throws outright in Safari's private mode and in a third-party iframe with storage blocked, and
+  this build runs inside someone else's frame. `ScoreManager.BestScoreKey` was renamed to
+  `flappyvoice.best` because the old key had been written with `PlayerPrefs.SetInt` and
+  `LocalStore` reads every value as a number.
 - **The microphone notice is not a consent step.** `MicrophoneNoticeUI` is the same parchment as
   the consent panels and follows their vertical rhythm, but it is its own object: the consent
   flow's job is to spend a tap on `getUserMedia`, and this reports the answer, which has to be

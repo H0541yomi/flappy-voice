@@ -121,7 +121,24 @@ namespace FlappyVoice.Config
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
 
-        public bool UseCameraBackground => _useCameraBackground;
+        // The pause menu's toggle, layered over the authored flag rather than written into it.
+        // This is a ScriptableObject ASSET: assigning the serialized field at runtime edits the
+        // asset, which in the Editor means a player's toggle gets saved as the shipped default.
+        [System.NonSerialized] private bool? _cameraBackgroundOverride;
+
+        public bool UseCameraBackground => _cameraBackgroundOverride ?? _useCameraBackground;
+
+        /// <summary>
+        /// Turns the selfie background on or off for this session. WebCam reads the flag every
+        /// frame, so the feed opens or is released as soon as this changes.
+        /// </summary>
+        // Narrows only. The authored flag is the dev kill switch, and a stored preference or a
+        // pause-menu tap that could turn the feed back on behind it would make the switch a
+        // default rather than an off.
+        public void SetUseCameraBackground(bool enabled)
+        {
+            _cameraBackgroundOverride = enabled && _useCameraBackground;
+        }
 
         public float UnitsPerSemitone
         {

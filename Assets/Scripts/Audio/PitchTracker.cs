@@ -8,6 +8,36 @@ namespace FlappyVoice.Audio
     {
         private const float NoteChangeToleranceSemitones = 1f;
 
+        // The two ends of the sensitivity slider, as RMS amplitude floors. Below the floor a
+        // frame is called silence and never reaches the detector, so this is the one number that
+        // decides what counts as singing at all - see the note on AmplitudeGateRms.
+        //
+        // The ends are picked so that each one is a DIFFERENT KIND of microphone, not two
+        // settings a room's noise sits either side of. At the sensitive end (-86 dBFS) the gate
+        // is under the self-noise of a phone mic, so room tone alone is enough to fly the bird -
+        // which is the point: a player who cannot be heard can always turn it up until
+        // something happens. At the other (-10.5 dBFS) it takes a voice raised right at the
+        // phone, which is what a loud room needs.
+        //
+        // This span replaced a much narrower 0.0002..0.02: 40 dB sounds wide written down, but
+        // its quiet end was already past every real room and its loud end was ordinary speech,
+        // so the two extremes behaved the same in most rooms and the slider read as doing
+        // nothing.
+        //
+        // Both ends are authored in dBFS and written here as the amplitude they mean, because
+        // the gate is compared against an RMS: 10^(-86/20) and 10^(-10.5/20).
+        public const float MostSensitiveGateRms = 0.00005f;
+        public const float LeastSensitiveGateRms = 0.2985f;
+
+        // Where GameConfig's authored 0.001 gate falls on that slider. Kept as the one default so
+        // a player who never touches the slider gets exactly the tuning the game shipped with -
+        // MicSensitivityTests pins that, so this moves whenever either end above does.
+        //
+        // The cost of the wider span, stated rather than discovered: 75.5 dB over the travel is
+        // 0.76 dB per percent, so the usable band around the default is a smaller slice of the
+        // bar than it was. That is the trade for ends that actually differ.
+        public const float DefaultSensitivity01 = 0.655f;
+
         [SerializeField] private MicrophoneInput microphoneInput;
 
         // Detection range is NOT the anchor's vocal-range sanity clamp: clamping detection at 700Hz
@@ -38,6 +68,29 @@ namespace FlappyVoice.Audio
 
         public PitchSample Current { get; private set; }
         public bool HasVoice => Current.IsVoiced;
+
+        /// <summary>
+        /// The RMS amplitude a frame has to reach before it is pitched at all. Settable at
+        /// runtime because no single value suits both a quiet room and a noisy one: too low and
+        /// room noise gets a pitch and flies the bird, too high and a soft singer is silence.
+        /// </summary>
+        public float AmplitudeGateRms
+        {
+            get => _amplitudeGateRms;
+            set => _amplitudeGateRms = Mathf.Max(0f, value);
+        }
+
+        /// <summary>
+        /// Maps a 0..1 "sensitivity" - 1 being the most sensitive - onto the amplitude gate.
+        /// Geometric rather than linear because loudness is: the bottom of a linear sweep would
+        /// spend most of its travel on gates no voice ever trips.
+        /// </summary>
+        public static float GateRmsForSensitivity(float sensitivity01)
+        {
+            return LeastSensitiveGateRms * Mathf.Pow(MostSensitiveGateRms / LeastSensitiveGateRms,
+                Mathf.Clamp01(sensitivity01));
+        }
+
         public event System.Action<PitchSample> OnSample;
 
         public void Configure(GameConfig config)
