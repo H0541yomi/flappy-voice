@@ -39,6 +39,11 @@ namespace FlappyVoice.Editor
         private const string BellTopSpritePath = "Assets/Art/Trumpets/bell_top.png";
         private const string BellBottomSpritePath = "Assets/Art/Trumpets/bell_bottom.png";
         private const string BirdIdleSpritePath = "Assets/Art/Bird/bird_idle.png";
+        // The idle cycle, numbered rather than listed: the frames that exist are wired and the
+        // rest are skipped, so a frame added to (or missing from) the drop - 05 is absent today -
+        // is picked up by the next scene build without touching this file.
+        private const string BirdIdleFramePathFormat = "Assets/Art/Bird/bird_idle_{0:00}.png";
+        private const int BirdIdleFrameCount = 10;
         private const string BirdSingSpritePath = "Assets/Art/Bird/bird_sing.png";
         private const string BirdDeadSpritePath = "Assets/Art/Bird/bird_dead.png";
         private const string BirdFlashSpritePath = "Assets/Art/Bird/bird_flash.png";
@@ -592,6 +597,7 @@ namespace FlappyVoice.Editor
             SerializedObject so = new SerializedObject(player);
             SetRef(so, "_renderer", renderer);
             SetRef(so, "_idleSprite", birdSprite);
+            SetRefArray(so, "_idleFrames", LoadBirdIdleFrames());
             SetRef(so, "_singSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdSingSpritePath));
             SetRef(so, "_deadSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdDeadSpritePath));
             SetRef(so, "_flashSprite", AssetDatabase.LoadAssetAtPath<Sprite>(BirdFlashSpritePath));
@@ -931,6 +937,30 @@ namespace FlappyVoice.Editor
         {
             Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
             return sprite != null ? sprite : fallback();
+        }
+
+        // The idle frames that are actually on disk, in order. A gap in the numbering is not an
+        // error worth warning about the way a missing named sprite is: PlayerController plays the
+        // cycle by index, so an absent frame is one longer step rather than a hole. Returning
+        // empty is a working state too - the bird keeps its single rest pose.
+        private static Sprite[] LoadBirdIdleFrames()
+        {
+            Sprite[] frames = new Sprite[BirdIdleFrameCount];
+            int found = 0;
+
+            for (int number = 1; number <= BirdIdleFrameCount; number++)
+            {
+                Sprite frame = AssetDatabase.LoadAssetAtPath<Sprite>(
+                    string.Format(BirdIdleFramePathFormat, number));
+                if (frame != null)
+                {
+                    frames[found] = frame;
+                    found++;
+                }
+            }
+
+            Array.Resize(ref frames, found);
+            return frames;
         }
 
         // Pipe.Setup sizes each section purely through localScale, so the section must stay a

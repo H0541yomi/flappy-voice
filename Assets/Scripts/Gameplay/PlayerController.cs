@@ -14,6 +14,10 @@ namespace FlappyVoice.Gameplay
 
         [SerializeField] private SpriteRenderer _renderer;
         [SerializeField] private Sprite _idleSprite;
+        // The idle cycle, used in place of _idleSprite whenever it has frames in it. Empty is
+        // a working state, not a broken one: the bird falls back to the single rest pose. The
+        // rate it plays at is GameConfig.IdleFramesPerSec, not a field here.
+        [SerializeField] private Sprite[] _idleFrames;
         [SerializeField] private Sprite _singSprite;
         [SerializeField] private Sprite _deadSprite;
         // Same silhouette as the dead pose with the colour blown out, so alternating the two is a
@@ -83,6 +87,47 @@ namespace FlappyVoice.Gameplay
             }
         }
 
+        /// Frame index for one step of a cycle played out and then back again.
+        ///
+        /// Static and free of the component so the off-by-one at each end stays pinnable: both
+        /// ends must be visited once per cycle rather than twice, or the bird hesitates for a
+        /// double-length beat at the top and bottom of the sweep.
+        public static int PingPongIndex(int step, int frameCount)
+        {
+            if (frameCount <= 1)
+            {
+                return 0;
+            }
+
+            int span = (frameCount * 2) - 2;
+            int position = step % span;
+            return position < frameCount ? position : span - position;
+        }
+
+        // One frame of the idle cycle, played out and then back rather than looped. The frames
+        // are a one-way morph - the folded wing sweeps forward along the flank from the first to
+        // the last - so a plain loop would replay the whole sweep backwards in the single step
+        // from the last frame to the first. Out and back makes a cycle of them for no extra art,
+        // and the pause menu's timeScale of zero stops it with everything else, because Time.time
+        // does not advance there.
+        private Sprite IdleFrame()
+        {
+            if (_idleFrames == null || _idleFrames.Length == 0)
+            {
+                return _idleSprite;
+            }
+
+            // Read every frame rather than cached, so the config's rate can be dragged while
+            // the game is playing and the cycle answers immediately.
+            if (_config == null)
+            {
+                return _idleFrames[0];
+            }
+
+            int step = (int)(Time.time * _config.IdleFramesPerSec);
+            return _idleFrames[PingPongIndex(step, _idleFrames.Length)];
+        }
+
         // Idle, singing, or dead. Assigned only on a change: this runs every frame and the
         // renderer does real work when the sprite is set.
         private void UpdatePose()
@@ -116,6 +161,10 @@ namespace FlappyVoice.Gameplay
                 if (_singSprite != null && Time.time - _lastVoicedTime <= _singPoseHoldSec)
                 {
                     pose = _singSprite;
+                }
+                else
+                {
+                    pose = IdleFrame();
                 }
             }
 

@@ -84,6 +84,14 @@ namespace FlappyVoice.Config
         // in every frame.
         [SerializeField] private bool _useCameraBackground = true;
 
+        // TEMP: playback rate of the bird's idle cycle, here so it can be dialled in while the
+        // game is running. It lives on the config for the same reason the camera switch does -
+        // the scene is generated, so a number typed onto PlayerController is thrown away the
+        // next time SceneBuilder runs. The cycle is played out and back, so a full sweep takes
+        // (frames * 2 - 2) / this seconds: at nine frames and 24, two thirds of a second.
+        // Fold the settled value back into a constant and delete this once it is chosen.
+        [SerializeField] private float _idleFramesPerSec = 24f;
+
         public int PipeGapNotes => _pipeGapNotes;
         public float PipeGapClearanceUnits => _pipeGapClearanceUnits;
         public float MinPipeGapClearanceUnits => _minPipeGapClearanceUnits;
@@ -120,6 +128,7 @@ namespace FlappyVoice.Config
 
         public float HeightSmoothTimeSec => _heightSmoothTimeSec;
         public float MaxVerticalSpeed => _maxVerticalSpeed;
+        public float IdleFramesPerSec => _idleFramesPerSec;
 
         // The pause menu's toggle, layered over the authored flag rather than written into it.
         // This is a ScriptableObject ASSET: assigning the serialized field at runtime edits the

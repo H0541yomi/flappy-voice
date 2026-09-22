@@ -68,3 +68,4 @@ MonoBehaviour:
   _heightSmoothTimeSec: 0.06
   _maxVerticalSpeed: 9
   _useCameraBackground: 1
+  _idleFramesPerSec: 24
